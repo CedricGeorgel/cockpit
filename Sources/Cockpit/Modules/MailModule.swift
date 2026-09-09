@@ -90,11 +90,56 @@ final class MailModel: ObservableObject {
         UserDefaults.standard.stringArray(forKey: keywordsKey) ?? []
     }
     func setKeywords(_ list: [String]) {
-        let clean = list.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        var seen = Set<String>()
+        let clean = list.map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
         keywords = clean
         UserDefaults.standard.set(clean, forKey: Self.keywordsKey)
+        NotificationCenter.default.post(name: .cockpitLocalSettingChanged, object: nil)
         refreshAll()
     }
+
+    func toggleKeyword(_ k: String) {
+        if let i = keywords.firstIndex(where: { $0.caseInsensitiveCompare(k) == .orderedSame }) {
+            var l = keywords; l.remove(at: i); setKeywords(l)
+        } else {
+            setKeywords(keywords + [k])
+        }
+    }
+
+    /// Propositions prêtes à cocher : mots qui, dans un sujet ou un expéditeur,
+    /// annoncent presque toujours un message à ne pas rater.
+    static let suggestedKeywords: [(String, [String])] = [
+        ("Urgent / à faire", [
+            "urgent", "action requise", "réponse attendue", "relance", "dernier rappel",
+            "avant le", "échéance", "date limite", "à valider", "à signer", "signature",
+            "merci de confirmer", "réponse souhaitée",
+        ]),
+        ("Argent", [
+            "facture", "impayé", "paiement refusé", "prélèvement", "remboursement",
+            "devis", "mise en demeure", "relevé", "trop-perçu",
+        ]),
+        ("Rendez-vous / santé", [
+            "rendez-vous", "convocation", "confirmation de rendez-vous",
+            "résultats", "ordonnance", "compte rendu",
+        ]),
+        ("Contrats / abonnements", [
+            "résiliation", "renouvellement", "expire le", "fin de contrat",
+            "préavis", "suspension", "mise à jour des conditions",
+        ]),
+        ("Travail / études", [
+            "entretien", "candidature", "proposition", "offre", "contrat de travail",
+            "recrutement", "dossier d'inscription", "admission",
+        ]),
+        ("Logement", [
+            "bail", "loyer", "quittance", "état des lieux", "régularisation des charges",
+            "assurance habitation",
+        ]),
+        ("Administratif", [
+            "impôts", "ameli", "caf", "pôle emploi", "france travail", "urssaf",
+            "carte grise", "amende", "recommandé",
+        ]),
+    ]
 
     init() {
         imapAccounts = MailAccountStore.load()
@@ -593,29 +638,129 @@ struct MailModule: View {
 private struct KeywordEditor: View {
     @ObservedObject var model: MailModel
     @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
+    @State private var custom = ""
+
+    private func has(_ k: String) -> Bool {
+        model.keywords.contains { $0.caseInsensitiveCompare(k) == .orderedSame }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel(text: "Mots-clés importants")
-            Text("Un mail dont le sujet ou l'expéditeur contient l'un de ces mots est marqué important (un par ligne).")
+            Text("Un mail dont le sujet ou l'expéditeur contient l'un de ces mots passe en important, même s'il ressemble à une newsletter.")
                 .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
-            TextEditor(text: $text)
-                .font(.system(size: 12, design: .monospaced))
-                .frame(width: 240, height: 110)
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 9) {
+                    // Ceux ajoutés à la main qui ne sont pas dans les propositions.
+                    let suggested = Set(MailModel.suggestedKeywords.flatMap { $0.1 }.map { $0.lowercased() })
+                    let mine = model.keywords.filter { !suggested.contains($0.lowercased()) }
+                    if !mine.isEmpty { chipGroup("Les tiens", mine) }
+                    ForEach(MailModel.suggestedKeywords, id: \.0) { section in
+                        chipGroup(section.0, section.1)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(width: 300, height: 260)
+
+            HStack(spacing: 6) {
+                TextField("ajouter un mot…", text: $custom)
+                    .textFieldStyle(.roundedBorder).font(.ui(11))
+                    .onSubmit { addCustom() }
+                Button("Ajouter") { addCustom() }
+                    .buttonStyle(GhostButtonStyle())
+                    .disabled(custom.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
             HStack {
                 Spacer()
-                Button("Annuler") { dismiss() }.buttonStyle(GhostButtonStyle())
-                Button("Enregistrer") {
-                    model.setKeywords(text.components(separatedBy: .newlines))
-                    dismiss()
-                }.buttonStyle(GhostButtonStyle(prominent: true))
+                Button("Fermer") { dismiss() }.buttonStyle(GhostButtonStyle(prominent: true))
             }
         }
         .padding(12)
-        .onAppear { text = model.keywords.joined(separator: "\n") }
+    }
+
+    private func addCustom() {
+        let k = custom.trimmingCharacters(in: .whitespaces)
+        guard !k.isEmpty else { return }
+        if !has(k) { model.toggleKeyword(k) }
+        custom = ""
+    }
+
+    @ViewBuilder
+    private func chipGroup(_ title: String, _ words: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased())
+                .font(.ui(8.5, .semibold)).foregroundStyle(Theme.textFaint).tracking(0.4)
+            FlowChips(words: words, isOn: { has($0) }) { model.toggleKeyword($0) }
+        }
+    }
+}
+
+/// Petit wrap de « chips » cochables.
+private struct FlowChips: View {
+    let words: [String]
+    let isOn: (String) -> Bool
+    let toggle: (String) -> Void
+
+    var body: some View {
+        FlexWrap(words, spacing: 5) { w in
+            Button { toggle(w) } label: {
+                Text(w).font(.ui(10.5))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 6)
+                        .fill(isOn(w) ? Theme.accent.opacity(0.2) : Color.primary.opacity(0.05)))
+                    .overlay(RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(isOn(w) ? Theme.accent.opacity(0.6) : Theme.hairline))
+                    .foregroundStyle(isOn(w) ? Theme.text : Theme.textDim)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Layout « wrap » horizontal (chips qui passent à la ligne).
+private struct FlexWrap<Data: RandomAccessCollection, Content: View>: View where Data.Element: Hashable {
+    let data: Data
+    let spacing: CGFloat
+    let content: (Data.Element) -> Content
+
+    init(_ data: Data, spacing: CGFloat = 6, @ViewBuilder content: @escaping (Data.Element) -> Content) {
+        self.data = data; self.spacing = spacing; self.content = content
+    }
+
+    var body: some View {
+        FlowLayout(spacing: spacing) {
+            ForEach(Array(data), id: \.self) { content($0) }
+        }
+    }
+}
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? 300
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x + s.width > maxW, x > 0 { x = 0; y += rowH + spacing; rowH = 0 }
+            x += s.width + spacing
+            rowH = max(rowH, s.height)
+        }
+        return CGSize(width: maxW, height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x + s.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing
+            rowH = max(rowH, s.height)
+        }
     }
 }
 

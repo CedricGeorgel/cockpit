@@ -243,7 +243,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.7";
+const COCKPIT_VERSION = "0.8";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -618,7 +618,16 @@ function agendaCard(){
     m.append(el("div","t",e.title));
     const when = e.allDay ? "toute la journée" : [hm(e.start), e.location].filter(Boolean).join(" · ");
     if(when) m.append(el("div","s",when));
-    r.append(m); return r;
+    r.append(m);
+    // Rejoindre la visio, de 10 min avant à la fin.
+    if(e.videoURL){
+      const s = +new Date(e.start), en = e.end ? +new Date(e.end) : s + 3600e3;
+      if(Date.now() >= s - 600e3 && Date.now() <= en){
+        const a = el("a",null,"🎥"); a.href = e.videoURL; a.target = "_blank";
+        a.style.cssText = "font-size:15px;padding:0 4px"; r.append(a);
+      }
+    }
+    return r;
   };
   if(!today.length) b.append(el("div","muted","Rien aujourd'hui"));
   for(const e of today) b.append(evRow(e));

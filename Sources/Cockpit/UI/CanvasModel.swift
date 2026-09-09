@@ -4,6 +4,7 @@ import SwiftUI
 /// `ModuleHost`, et sa place par défaut dans `defaultColumns`.
 enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     case disk
+    case timeline
     case calendar
     case weather
     case scratchpad
@@ -22,6 +23,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     var title: String {
         switch self {
         case .disk:       return "Disque & système"
+        case .timeline:   return "Aujourd'hui"
         case .calendar:   return "Agenda"
         case .weather:    return "Météo"
         case .scratchpad: return "Bloc-notes"
@@ -40,6 +42,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     var icon: String {
         switch self {
         case .disk:       return "internaldrive"
+        case .timeline:   return "calendar.day.timeline.left"
         case .calendar:   return "calendar"
         case .weather:    return "cloud.sun"
         case .scratchpad: return "note.text"
@@ -58,6 +61,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     /// Poids de hauteur par défaut dans sa colonne.
     var defaultWeight: Double {
         switch self {
+        case .timeline:   return 1.6
         case .weather:    return 1.0
         case .disk:       return 1.5
         case .nowPlaying: return 0.5
@@ -320,7 +324,7 @@ final class CanvasModel: ObservableObject {
     }
 
     static let defaultColumns: [[ModuleKind]] = [
-        [.weather, .disk, .nowPlaying, .battery],
+        [.timeline, .weather, .disk, .nowPlaying, .battery],
         [.mail, .jobs, .calendar, .trips, .todos],
         [.news, .parcels, .scratchpad, .callTime],
     ]

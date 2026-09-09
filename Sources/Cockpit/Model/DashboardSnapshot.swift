@@ -61,6 +61,7 @@ struct DashboardSnapshot: Codable {
         var allDay: Bool
         var location: String?
         var dayLabel: String
+        var videoURL: String?
     }
 
     struct Todo: Codable, Identifiable {
@@ -171,7 +172,8 @@ enum SnapshotBuilder {
             DashboardSnapshot.Agenda(
                 id: e.id, title: e.title, start: e.start, end: e.end, allDay: e.allDay,
                 location: e.location,
-                dayLabel: (e.start.map { Fmt.relday($0) } ?? "").capitalizedFirst)
+                dayLabel: (e.start.map { Fmt.relday($0) } ?? "").capitalizedFirst,
+                videoURL: e.videoURL?.absoluteString)
         }
 
         // À faire

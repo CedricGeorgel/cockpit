@@ -108,6 +108,7 @@ struct DashboardView: View {
         case .todos:      return todos.items.isEmpty
         case .scratchpad: return scratchEmpty
         case .news:       return news.allRead || news.nothingFresh
+        case .timeline:   return TimelineModule.entries(calendar, todos, mail).isEmpty
         default:          return false
         }
     }
@@ -134,6 +135,7 @@ struct DashboardView: View {
             case .calendar:   return "rien aujourd'hui"
             case .scratchpad: return "vide"
             case .news:       return news.allRead ? "tout lu" : "rien de neuf"
+            case .timeline:   return "rien aujourd'hui"
             default:          return nil
             }
         }
@@ -400,6 +402,7 @@ struct ModuleHost: View {
     var body: some View {
         switch kind {
         case .disk:       DiskModule(model: services.disk)
+        case .timeline:   TimelineModule(calendar: services.calendar, todos: services.todos, mail: services.mail)
         case .calendar:   CalendarModule(model: services.calendar)
         case .weather:    WeatherModule(model: services.weather)
         case .scratchpad: ScratchpadModule()

@@ -10,6 +10,29 @@ struct AgendaItem: Identifiable {
     let allDay: Bool
     let calendarColor: Color
     let location: String?
+    var videoURL: URL? = nil   // lien visio détecté (Zoom/Meet/Teams…)
+}
+
+/// Repère un lien de visioconférence dans le texte d'un évènement.
+enum MeetingLink {
+    private static let hosts = ["zoom.us", "meet.google.com", "teams.microsoft.com",
+                                "teams.live.com", "whereby.com", "meet.jit.si",
+                                "webex.com", "gotomeeting.com", "chime.aws", "around.co"]
+
+    static func find(in parts: String?...) -> URL? {
+        let hay = parts.compactMap { $0 }.joined(separator: " ")
+        guard !hay.isEmpty else { return nil }
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(hay.startIndex..., in: hay)
+        var candidates: [URL] = []
+        detector?.enumerateMatches(in: hay, range: range) { m, _, _ in
+            if let u = m?.url { candidates.append(u) }
+        }
+        return candidates.first { u in
+            guard let host = u.host?.lowercased() else { return false }
+            return hosts.contains { host == $0 || host.hasSuffix(".\($0)") }
+        }
+    }
 }
 
 final class CalendarModel: ObservableObject {
@@ -58,7 +81,8 @@ final class CalendarModel: ObservableObject {
                            title: e.title ?? "(sans titre)",
                            start: e.startDate, end: e.endDate, allDay: e.isAllDay,
                            calendarColor: Color(nsColor: e.calendar.color ?? .systemGray),
-                           location: e.location?.isEmpty == false ? e.location : nil)
+                           location: e.location?.isEmpty == false ? e.location : nil,
+                           videoURL: MeetingLink.find(in: e.notes, e.location, e.url?.absoluteString))
             }
         DispatchQueue.main.async { self.events = evs }
     }
@@ -127,6 +151,9 @@ struct CalendarModule: View {
                     .foregroundStyle(Theme.textFaint)
             }
             Spacer(minLength: 0)
+            if let url = item.videoURL, JoinButton.isRelevant(item) {
+                JoinButton(url: url)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -138,5 +165,25 @@ struct CalendarModule: View {
         if let end = item.end { s += " à \(Fmt.shortTime(end))" }
         if let loc = item.location { s += " · \(loc)" }
         return s
+    }
+}
+
+/// Bouton « Rejoindre » d'une réunion : visible de 10 min avant la fin.
+struct JoinButton: View {
+    let url: URL
+    static func isRelevant(_ item: AgendaItem, now: Date = Date()) -> Bool {
+        guard let s = item.start, !item.allDay else { return false }
+        let e = item.end ?? s.addingTimeInterval(3600)
+        return now >= s.addingTimeInterval(-600) && now <= e
+    }
+    var body: some View {
+        Button { NSWorkspace.shared.open(url) } label: {
+            Label("Rejoindre", systemImage: "video.fill")
+                .font(.ui(9.5, .semibold))
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Theme.accent.opacity(0.16)))
+                .foregroundStyle(Theme.accent)
+        }
+        .buttonStyle(.plain)
     }
 }
