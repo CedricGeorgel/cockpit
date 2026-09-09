@@ -53,9 +53,12 @@ final class WeatherModel: ObservableObject {
     }
 
     private func load(query: String) async {
+        // On garde le dernier relevé valable pendant qu'on retente : une faute de
+        // frappe ne doit pas vider la carte (et laisser la ville toujours éditable).
+        let previous = await MainActor.run { snapshot }
         do {
             guard let geo = try await geocode(query) else {
-                await set(nil, "Ville introuvable"); return
+                await set(previous, "« \(query) » : ville introuvable"); return
             }
             async let forecast = fetchForecast(lat: geo.lat, lon: geo.lon)
             async let air = fetchAir(lat: geo.lat, lon: geo.lon)
@@ -67,7 +70,7 @@ final class WeatherModel: ObservableObject {
             snap.topPollen = a?.topPollen
             await set(snap, nil)
         } catch {
-            await set(nil, "Réseau indisponible")
+            await set(previous, "Réseau indisponible")
         }
     }
 
@@ -174,14 +177,20 @@ struct WeatherModule: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let s = model.snapshot {
                     header(s)
+                    if let e = model.error {
+                        Label(e, systemImage: "exclamationmark.triangle.fill")
+                            .font(.ui(10)).foregroundStyle(Theme.warn)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
                     detailsAccordion(s)
                 } else if !model.hasPlace {
                     ModuleNotice(icon: "location.magnifyingglass", title: "Choisissez une ville",
                                  action: ("Définir la ville", { draft = ""; editingPlace = true }))
                         .popover(isPresented: $editingPlace) { placeEditor }
                 } else if let e = model.error {
-                    ModuleNotice(icon: "wifi.slash", title: e,
-                                 action: ("Réessayer", { model.refresh() }))
+                    ModuleNotice(icon: "location.slash", title: e,
+                                 action: ("Changer de ville", { draft = model.place; editingPlace = true }))
+                        .popover(isPresented: $editingPlace) { placeEditor }
                 } else {
                     ModuleNotice(icon: "cloud.sun", title: "Chargement…")
                 }
