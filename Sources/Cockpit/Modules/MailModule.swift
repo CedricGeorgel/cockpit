@@ -1,0 +1,621 @@
+import SwiftUI
+import AppKit
+import Contacts
+
+final class MailModel: ObservableObject {
+    @Published var imapAccounts: [MailAccount]
+    @Published private(set) var appleMailAccounts: [String] = []
+    @Published private(set) var states: [String: SourceState] = [:]
+    @Published var contactsGranted = false
+    @Published var appleMailError: String?
+
+    let appleMailInstalled = AppleMailBridge.isMailInstalled
+    private var contactEmails: Set<String> = []
+    private var timer: Timer?
+
+    // MARK: Sources
+
+    enum Source: Identifiable, Equatable {
+        case appleMail(String)
+        case imap(MailAccount)
+
+        var id: String {
+            switch self {
+            case .appleMail(let n): return "am:" + n
+            case .imap(let a):      return "imap:" + a.id.uuidString
+            }
+        }
+        var name: String {
+            switch self {
+            case .appleMail(let n): return n
+            case .imap(let a):      return a.name
+            }
+        }
+        var viaAppleMail: Bool { if case .appleMail = self { return true } else { return false } }
+    }
+
+    /// Pour l'instant : uniquement les comptes de Mail.app.
+    var sources: [Source] {
+        appleMailAccounts.map(Source.appleMail)
+    }
+
+    struct SourceState {
+        var loading = false
+        var error: String?
+        var mails: [Mail] = []
+        var otherUnread = 0
+        var lastSync: Date?
+        var unread: Int { mails.filter { !$0.seen }.count }
+    }
+
+    struct Mail: Identifiable {
+        let id: String
+        var fromName: String
+        var fromAddress: String
+        var subject: String
+        var date: Date
+        var seen: Bool
+        var reason: Reason
+        var messageID: String
+        var account: String = ""
+    }
+
+    enum Reason: Int {
+        case flagged = 0, keyword = 1, work = 2, contact = 3, known = 4
+        var icon: String {
+            switch self {
+            case .flagged: return "flag.fill"
+            case .keyword: return "tag.fill"
+            case .work:    return "briefcase.fill"
+            case .contact: return "person.fill"
+            case .known:   return "arrowshape.turn.up.left.fill"
+            }
+        }
+        var label: String {
+            switch self {
+            case .flagged: return "signalé"
+            case .keyword: return "mot-clé suivi"
+            case .work:    return "travail / candidature"
+            case .contact: return "dans tes contacts"
+            case .known:   return "déjà échangé"
+            }
+        }
+    }
+
+    /// Mots-clés qui rendent un mail important (sujet ou expéditeur). Édités par
+    /// l'utilisateur, synchronisés entre appareils via `?f=settings`.
+    @Published var keywords: [String] = MailModel.loadKeywords()
+    private static let keywordsKey = "cockpit.mail.keywords"
+    static func loadKeywords() -> [String] {
+        UserDefaults.standard.stringArray(forKey: keywordsKey) ?? []
+    }
+    func setKeywords(_ list: [String]) {
+        let clean = list.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        keywords = clean
+        UserDefaults.standard.set(clean, forKey: Self.keywordsKey)
+        refreshAll()
+    }
+
+    init() {
+        imapAccounts = MailAccountStore.load()
+        NotificationCenter.default.addObserver(
+            forName: .cockpitSettingsImported, object: nil, queue: .main
+        ) { [weak self] _ in
+            let fresh = MailModel.loadKeywords()
+            if fresh != self?.keywords { self?.keywords = fresh; self?.refreshAll() }
+        }
+    }
+
+    func start() {
+        loadContacts()
+        discoverAppleMail()
+        refreshAll()
+        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            self?.refreshAll()
+        }
+        // Après un aller-retour dans les Réglages (autorisation Automatisation),
+        // on retente la découverte au retour dans l'app.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.appleMailInstalled, self.appleMailAccounts.isEmpty else { return }
+            self.discoverAppleMail()
+        }
+    }
+
+    func state(_ id: String) -> SourceState { states[id] ?? SourceState() }
+
+    // MARK: Découverte Mail.app
+
+    func discoverAppleMail() {
+        guard appleMailInstalled else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let result: Result<[String], Error> = Result { try AppleMailBridge.accountNames() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let names):
+                    self.appleMailAccounts = names
+                    self.appleMailError = nil
+                    for n in names { self.refresh(.appleMail(n)) }
+                case .failure(let error):
+                    self.appleMailError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func openAutomationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: Comptes IMAP directs
+
+    func addPasswordAccount(_ account: MailAccount, password: String) {
+        imapAccounts.append(account)
+        MailAccountStore.save(imapAccounts)
+        MailAccountStore.update(account.id) { $0.password = password }
+        refresh(.imap(account))
+    }
+
+    func addOAuthAccount(_ account: MailAccount, clientSecret: String, tokens: OAuthTokens) {
+        imapAccounts.append(account)
+        MailAccountStore.save(imapAccounts)
+        MailAccountStore.update(account.id) { $0.clientSecret = clientSecret; $0.tokens = tokens }
+        refresh(.imap(account))
+    }
+
+    func removeIMAP(_ id: UUID) {
+        imapAccounts.removeAll { $0.id == id }
+        MailAccountStore.save(imapAccounts)
+        MailAccountStore.delete(id)
+        states["imap:" + id.uuidString] = nil
+    }
+
+    func hasCredential(_ acc: MailAccount) -> Bool {
+        let s = MailAccountStore.secrets(for: acc.id)
+        return acc.auth.isOAuth ? (s.tokens != nil) : (s.password != nil)
+    }
+
+    func setPassword(_ password: String, for id: UUID) {
+        MailAccountStore.update(id) { $0.password = password }
+        if let acc = imapAccounts.first(where: { $0.id == id }) { refresh(.imap(acc)) }
+    }
+
+    // MARK: Rafraîchissement
+
+    func refreshAll() { sources.forEach(refresh) }
+
+    func refresh(_ source: Source) {
+        let contacts = contactEmails
+        let sid = source.id
+        update(sid) { $0.loading = true; $0.error = nil }
+
+        switch source {
+        case .appleMail(let name):
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let result: Result<([Mail], Int), Error>
+                do {
+                    let fetch = try AppleMailBridge.fetch(account: name)
+                    result = .success(Self.digest(fetch, contacts: contacts, account: name))
+                } catch { result = .failure(error) }
+                DispatchQueue.main.async { self?.apply(result, to: sid) }
+            }
+
+        case .imap(let account):
+            guard hasCredential(account) else {
+                update(sid) { $0.loading = false; $0.error = account.auth.isOAuth
+                    ? "Reconnexion nécessaire" : "Mot de passe manquant" }
+                return
+            }
+            Task { [weak self] in
+                let result: Result<([Mail], Int), Error>
+                do {
+                    let auth = try await Self.authorization(for: account)
+                    let client = IMAPClient(host: account.host, port: account.port)
+                    let fetch = try await client.fetchImportant(user: account.username, auth: auth)
+                    result = .success(Self.digest(fetch, contacts: contacts, account: account.name))
+                } catch { result = .failure(error) }
+                await MainActor.run { [weak self] in self?.apply(result, to: sid) }
+            }
+        }
+    }
+
+    private func apply(_ result: Result<([Mail], Int), Error>, to sid: String) {
+        switch result {
+        case .success(let (mails, unread)):
+            update(sid) {
+                $0.loading = false; $0.mails = mails
+                $0.otherUnread = unread; $0.lastSync = Date()
+            }
+        case .failure(let error):
+            update(sid) {
+                $0.loading = false
+                $0.error = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private static func authorization(for account: MailAccount) async throws -> IMAPClient.Auth {
+        switch account.auth {
+        case .password:
+            guard let pw = MailAccountStore.secrets(for: account.id).password else {
+                throw IMAPError.login("mot de passe manquant")
+            }
+            return .password(pw)
+        case .oauth(let provider, let clientID):
+            var s = MailAccountStore.secrets(for: account.id)
+            guard var tokens = s.tokens else { throw IMAPError.oauthRequired }
+            if !tokens.isFresh {
+                tokens = try await OAuthFlow.refresh(
+                    provider: provider, clientID: clientID,
+                    clientSecret: s.clientSecret ?? "", refreshToken: tokens.refreshToken)
+                s.tokens = tokens
+                MailAccountStore.update(account.id) { $0.tokens = tokens }
+            }
+            return .xoauth2(token: tokens.accessToken)
+        }
+    }
+
+    /// Tri « important » : signalé, ou travail/candidature, ou contact, ou
+    /// correspondant déjà connu. Les listes / newsletters sont écartées.
+    private static func digest(_ fetch: MailFetch, contacts: Set<String>, account: String) -> ([Mail], Int) {
+        var mails: [Mail] = []
+        var otherUnread = 0
+        let keywords = loadKeywords().map { $0.folding(options: .diacriticInsensitive, locale: nil).lowercased() }
+        for m in fetch.messages {
+            let email = m.fromAddress.lowercased()
+            let hay = (m.subject + " " + m.fromName + " " + email)
+                .folding(options: .diacriticInsensitive, locale: nil).lowercased()
+            let reason: Reason?
+            // Signalé ou mot-clé suivi : passe toujours, même si c'est une « liste ».
+            if m.flagged { reason = .flagged }
+            else if keywords.contains(where: hay.contains) { reason = .keyword }
+            else if m.isBulk { continue }
+            else if isWorkRelated(m) { reason = .work }
+            else if contacts.contains(email) { reason = .contact }
+            else if fetch.knownCorrespondents.contains(email) { reason = .known }
+            else { reason = nil }
+
+            if let reason {
+                mails.append(Mail(id: "\(account)-\(m.uid)-\(email)", fromName: m.fromName, fromAddress: email,
+                                  subject: m.subject, date: m.date, seen: m.seen, reason: reason,
+                                  messageID: m.messageID, account: account))
+            } else if !m.seen {
+                otherUnread += 1
+            }
+        }
+        mails.sort { ($0.seen ? 1 : 0, $1.date) < ($1.seen ? 1 : 0, $0.date) }
+        return (mails, otherUnread)
+    }
+
+    /// Contexte professionnel : candidature, réponse de recruteur, entretien…
+    private static let workTerms = [
+        "candidature", "candidat", "postul", "recrut", "entretien", "embauche",
+        "offre d'emploi", "lettre de motivation", "recruteur", "ressources humaines",
+        "opportunité", "opportunit", "poste de", "poste à", "poste chez", "cdi", "cdd",
+        "stage", "alternance", "freelance", "prestation", "mission",
+        "hiring", "recruit", "interview", "job offer", "job application",
+        "your application", "we received your application", "application received",
+        "next steps", "talent acquisition", "career opportunity", "position at",
+        "candidacy", "cover letter",
+    ]
+    private static let workDomains = [
+        "lever.co", "greenhouse.io", "ashbyhq.com", "workable.com", "recruitee.com",
+        "teamtailor.com", "smartrecruiters.com", "myworkday.com", "workday.com",
+        "welcomekit.co", "welcometothejungle.com", "hellowork.com", "apec.fr",
+    ]
+
+    private static func isWorkRelated(_ m: RawMessage) -> Bool {
+        let haystack = (m.subject + " " + m.fromName).lowercased()
+        if workTerms.contains(where: haystack.contains) { return true }
+        let domain = m.fromAddress.split(separator: "@").last.map(String.init)?.lowercased() ?? ""
+        return workDomains.contains { domain.hasSuffix($0) }
+    }
+
+    private func update(_ id: String, _ change: (inout SourceState) -> Void) {
+        var s = states[id] ?? SourceState()
+        change(&s)
+        states[id] = s
+    }
+
+    // MARK: Contacts
+
+    func loadContacts() {
+        let store = CNContactStore()
+        store.requestAccess(for: .contacts) { [weak self] granted, _ in
+            DispatchQueue.main.async { self?.contactsGranted = granted }
+            guard granted else { return }
+            DispatchQueue.global(qos: .utility).async {
+                var emails = Set<String>()
+                let req = CNContactFetchRequest(keysToFetch: [CNContactEmailAddressesKey as CNKeyDescriptor])
+                try? store.enumerateContacts(with: req) { contact, _ in
+                    for e in contact.emailAddresses {
+                        emails.insert((e.value as String).lowercased().trimmingCharacters(in: .whitespaces))
+                    }
+                }
+                DispatchQueue.main.async { self?.contactEmails = emails }
+            }
+        }
+    }
+
+    /// Ouvre le mail dans Mail.app via le schéma `message:`.
+    func openInMail(_ mail: Mail) {
+        guard !mail.messageID.isEmpty else { NSWorkspace.shared.open(URL(string: "mailto:")!); return }
+        let allowed = CharacterSet(charactersIn:
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~@!$&'()*+,;=:")
+        let encoded = mail.messageID.addingPercentEncoding(withAllowedCharacters: allowed) ?? mail.messageID
+        if let url = URL(string: "message://%3c\(encoded)%3e") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func openContactsSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Contacts") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
+
+// MARK: - Vue
+
+struct MailModule: View {
+    @ObservedObject var model: MailModel
+    /// `nil` = onglet « Tout » (vue par défaut, agrège tous les comptes).
+    @State private var selectedID: String?
+    @State private var showKeywords = false
+
+    private var current: MailModel.Source? {
+        guard let id = selectedID else { return nil }
+        return model.sources.first { $0.id == id }
+    }
+    private var isAll: Bool { selectedID == nil }
+
+    /// État agrégé de tous les comptes pour l'onglet « Tout ».
+    private var allState: MailModel.SourceState {
+        var st = MailModel.SourceState()
+        var seen = Set<String>()
+        var mails: [MailModel.Mail] = []
+        for src in model.sources {
+            let s = model.state(src.id)
+            st.loading = st.loading || s.loading
+            st.otherUnread += s.otherUnread
+            if let ls = s.lastSync { st.lastSync = max(st.lastSync ?? .distantPast, ls) }
+            for m in s.mails where seen.insert(m.messageID.isEmpty ? m.id : m.messageID).inserted {
+                mails.append(m)
+            }
+        }
+        mails.sort { ($0.seen ? 1 : 0, $1.date) < ($1.seen ? 1 : 0, $0.date) }
+        st.mails = mails
+        return st
+    }
+
+    var body: some View {
+        ModuleBody {
+            VStack(alignment: .leading, spacing: 0) {
+                if model.sources.isEmpty {
+                    emptyState
+                } else {
+                    if let e = model.appleMailError, model.appleMailInstalled {
+                        appleMailBanner(e)
+                    }
+                    tabs
+                    Divider().overlay(Theme.hairline).padding(.vertical, 6)
+                    if isAll {
+                        list(allState, retry: nil, showAccount: model.sources.count > 1)
+                    } else if let src = current {
+                        list(model.state(src.id), retry: { model.refresh(src) }, showAccount: false)
+                    }
+                    footer
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "envelope").font(.system(size: 18)).foregroundStyle(Theme.textFaint)
+            if !model.appleMailInstalled {
+                Text("Mail.app introuvable").font(.ui(12, .medium)).foregroundStyle(Theme.textDim)
+            } else if model.appleMailError != nil {
+                Text("Autorise Cockpit à lire Mail").font(.ui(12, .medium)).foregroundStyle(Theme.textDim)
+                Text(model.appleMailError ?? "").font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                Button("Ouvrir les réglages") { model.openAutomationSettings() }
+                    .buttonStyle(GhostButtonStyle())
+                Button("Réessayer") { model.discoverAppleMail() }
+                    .buttonStyle(.plain).font(.ui(10)).foregroundStyle(Theme.info)
+            } else {
+                Text("Aucun compte dans Mail.app").font(.ui(12, .medium)).foregroundStyle(Theme.textDim)
+                Text("Ajoute tes adresses (Gmail, Outlook, iCloud…) dans Réglages Système › Comptes Internet. Elles apparaîtront ici automatiquement.")
+                    .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                Button("Ouvrir Comptes Internet") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preferences.internetaccounts")!)
+                }
+                .buttonStyle(GhostButtonStyle())
+                Button("Réessayer") { model.discoverAppleMail() }
+                    .buttonStyle(.plain).font(.ui(10)).foregroundStyle(Theme.info)
+            }
+        }
+        .padding(16).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func appleMailBanner(_ error: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "envelope.badge").font(.system(size: 10)).foregroundStyle(Theme.warn)
+            Text(error).font(.ui(9)).foregroundStyle(Theme.textDim).lineLimit(2)
+            Spacer(minLength: 4)
+            Button("Autoriser") { model.openAutomationSettings() }
+                .buttonStyle(.plain).font(.ui(9, .semibold)).foregroundStyle(Theme.info)
+            Button { model.discoverAppleMail() } label: {
+                Image(systemName: "arrow.clockwise").font(.system(size: 8))
+            }.buttonStyle(.plain).foregroundStyle(Theme.textFaint)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Theme.warn.opacity(0.08)))
+        .padding(.bottom, 6)
+    }
+
+    private var tabs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                tab(name: "Tout", icon: "tray.2", selected: isAll,
+                    loading: model.sources.contains { model.state($0.id).loading },
+                    badge: model.sources.reduce(0) { $0 + model.state($1.id).unread }) {
+                    selectedID = nil
+                }
+                ForEach(model.sources) { src in
+                    let s = model.state(src.id)
+                    tab(name: src.name, icon: src.viaAppleMail ? "envelope.circle.fill" : nil,
+                        selected: selectedID == src.id, loading: s.loading, badge: s.unread) {
+                        selectedID = src.id
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tab(name: String, icon: String?, selected: Bool, loading: Bool,
+                     badge: Int, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 9)).foregroundStyle(Theme.textFaint)
+                }
+                Text(name).font(.ui(11, .medium)).lineLimit(1)
+                if loading {
+                    ProgressView().controlSize(.mini).scaleEffect(0.65)
+                } else if badge > 0 {
+                    Text("\(badge)").font(.num(9, .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Capsule().fill(Theme.accent))
+                }
+            }
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 7)
+                .fill(selected ? Theme.accent.opacity(0.16) : Color.primary.opacity(0.05)))
+            .foregroundStyle(selected ? Theme.text : Theme.textDim)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func list(_ s: MailModel.SourceState, retry: (() -> Void)?, showAccount: Bool) -> some View {
+        if let e = s.error, let retry {
+            ModuleNotice(icon: "exclamationmark.triangle", title: e, action: ("Réessayer", retry))
+        } else if s.mails.isEmpty && !s.loading {
+            VStack(spacing: 4) {
+                Text("Rien d'important").font(.ui(11)).foregroundStyle(Theme.textFaint)
+                if s.otherUnread > 0 {
+                    Text("\(s.otherUnread) autres non lus").font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(s.mails) { row($0, showAccount: showAccount) }
+                    if s.otherUnread > 0 {
+                        Text("+ \(s.otherUnread) autres non lus (hors listes)")
+                            .font(.ui(9.5)).foregroundStyle(Theme.textFaint).padding(.top, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ m: MailModel.Mail, showAccount: Bool) -> some View {
+        Button { model.openInMail(m) } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Circle().fill(m.seen ? Color.clear : Theme.accent)
+                    .frame(width: 6, height: 6).padding(.top, 5)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text(m.fromName)
+                            .font(.ui(12, m.seen ? .regular : .semibold))
+                            .foregroundStyle(Theme.text).lineLimit(1)
+                        Image(systemName: m.reason.icon)
+                            .font(.system(size: 7)).foregroundStyle(Theme.textFaint)
+                            .help(m.reason.label)
+                        Spacer(minLength: 4)
+                        Text(Fmt.relday(m.date)).font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                    }
+                    HStack(spacing: 5) {
+                        if showAccount && !m.account.isEmpty {
+                            Text(m.account.uppercased())
+                                .font(.ui(7.5, .semibold)).foregroundStyle(Theme.textFaint)
+                                .padding(.horizontal, 3).padding(.vertical, 0.5)
+                                .background(RoundedRectangle(cornerRadius: 3).fill(Color.primary.opacity(0.07)))
+                        }
+                        Text(m.subject).font(.ui(11)).foregroundStyle(Theme.textDim).lineLimit(1)
+                    }
+                }
+            }
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Ouvrir dans Mail")
+    }
+
+    private var footer: some View {
+        let sync = isAll ? allState.lastSync : current.map { model.state($0.id).lastSync } ?? nil
+        return HStack(spacing: 6) {
+            if let sync {
+                Text("maj \(Fmt.shortTime(sync))").font(.ui(9)).foregroundStyle(Theme.textFaint)
+            }
+            if !model.contactsGranted {
+                Button("Autoriser Contacts") { model.openContactsSettings() }
+                    .buttonStyle(.plain).font(.ui(9)).foregroundStyle(Theme.info)
+            }
+            Spacer()
+            Button { showKeywords = true } label: {
+                Image(systemName: "tag").font(.system(size: 9))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(model.keywords.isEmpty ? Theme.textFaint : Theme.accent)
+            .help("Mots-clés importants")
+            .popover(isPresented: $showKeywords) { KeywordEditor(model: model) }
+            Button {
+                if let src = current { model.refresh(src) } else { model.refreshAll() }
+            } label: {
+                Image(systemName: "arrow.clockwise").font(.system(size: 9))
+            }.buttonStyle(.plain).foregroundStyle(Theme.textFaint)
+        }
+        .padding(.top, 4)
+    }
+}
+
+private struct KeywordEditor: View {
+    @ObservedObject var model: MailModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Mots-clés importants")
+            Text("Un mail dont le sujet ou l'expéditeur contient l'un de ces mots est marqué important (un par ligne).")
+                .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $text)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(width: 240, height: 110)
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline))
+            HStack {
+                Spacer()
+                Button("Annuler") { dismiss() }.buttonStyle(GhostButtonStyle())
+                Button("Enregistrer") {
+                    model.setKeywords(text.components(separatedBy: .newlines))
+                    dismiss()
+                }.buttonStyle(GhostButtonStyle(prominent: true))
+            }
+        }
+        .padding(12)
+        .onAppear { text = model.keywords.joined(separator: "\n") }
+    }
+}
+

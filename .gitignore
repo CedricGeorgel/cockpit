@@ -1,0 +1,5 @@
+.build/
+build/
+Cockpit.app/
+.DS_Store
+dist/

@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Cockpit</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --head:#1c2029; --line:rgba(255,255,255,.08);
+    --text:#e6e8ec; --dim:#a2a8b4; --faint:#6b7280; --soft:rgba(255,255,255,.05);
+    --accent:#2ecc8f; --warn:#d9822b; --info:#4a86d1; --onAccent:#052;
+    --r:14px;
+  }
+  /* thème clair : suit le système, sauf choix explicite */
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f4f5f7; --card:#ffffff; --head:#eef0f3; --line:rgba(0,0,0,.10);
+      --text:#1b1e24; --dim:#5b626e; --faint:#8a909c; --soft:rgba(0,0,0,.045);
+      --accent:#129e6b; --warn:#c9761f; --info:#2f6fbf; --onAccent:#fff;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f5f7; --card:#ffffff; --head:#eef0f3; --line:rgba(0,0,0,.10);
+    --text:#1b1e24; --dim:#5b626e; --faint:#8a909c; --soft:rgba(0,0,0,.045);
+    --accent:#129e6b; --warn:#c9761f; --info:#2f6fbf; --onAccent:#fff;
+  }
+  *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+  html,body{background:var(--bg);color:var(--text);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+  body{padding:0 12px calc(28px + env(safe-area-inset-bottom));max-width:520px;margin:0 auto}
+  a{color:var(--info);text-decoration:none}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  header{position:sticky;top:0;z-index:5;background:linear-gradient(var(--bg) 70%,transparent);
+    display:flex;align-items:center;gap:10px;padding:14px 2px 10px}
+  header .logo{width:22px;height:22px;border-radius:6px;background:#12161d;
+    display:grid;place-items:center;color:var(--accent);font-size:13px}
+  header h1{font-size:15px;font-weight:600;letter-spacing:.2px}
+  header .sub{font-size:11px;color:var(--faint);margin-left:auto}
+  header button{width:30px;height:30px;border-radius:8px;background:var(--card);
+    display:grid;place-items:center;color:var(--dim);font-size:14px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    margin-bottom:10px;overflow:hidden}
+  .card.alert{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,var(--card))}
+  .card.collapsed > h2{border-bottom:0;cursor:pointer}
+  .card.collapsed > h2 .ic{color:var(--faint)}
+  .card.collapsed > h2 > span:nth-child(2){color:var(--dim);font-weight:500}
+  .card.collapsed .body{display:none}
+  .card.collapsed h2 .cnote{font-size:10px;font-weight:400;color:var(--faint);margin-left:2px}
+  .card.collapsed h2 .cchev{margin-left:auto;color:var(--faint);font-size:9px}
+  .card > h2{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+    padding:9px 12px;background:var(--head);border-bottom:1px solid var(--line)}
+  .card > h2 .ic{color:var(--accent);font-size:12px}
+  .card > h2 .rt{margin-left:auto;color:var(--faint);font-weight:500;font-size:10px}
+  .body{padding:11px 12px}
+  .body.tight{padding:7px 8px}
+
+  .row{display:flex;align-items:center;gap:9px;padding:6px;border-radius:8px}
+  .row + .row{margin-top:2px}
+  .row.box{background:var(--soft)}
+  .row .main{min-width:0;flex:1}
+  .row .t{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .s{font-size:10px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .r{text-align:right;flex-shrink:0}
+  .pill{font-size:9px;font-weight:600;padding:1px 6px;border-radius:99px;white-space:nowrap}
+
+  .sect{font-size:9.5px;font-weight:700;letter-spacing:.6px;color:var(--faint);
+    text-transform:uppercase;margin:9px 0 3px}
+  .sect:first-child{margin-top:0}
+
+  .w-top{display:flex;align-items:flex-start;gap:12px}
+  .w-temp{font-size:30px;font-weight:600}
+  .w-ic{font-size:32px;line-height:1}
+  .w-acc{display:flex;align-items:center;gap:6px;width:100%;padding:8px 2px 2px;
+    font-size:10.5px;color:var(--faint)}
+  .w-grid{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+  .w-grid .row{padding:4px 6px}
+
+  .chips{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex-shrink:0;font-size:11px;font-weight:500;padding:4px 10px;border-radius:8px;
+    background:var(--soft);color:var(--dim)}
+  .chip.on{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--text)}
+  .chip .b{font-size:9px;font-weight:700;background:var(--accent);color:var(--onAccent);border-radius:99px;
+    padding:0 4px;margin-left:4px}
+
+  .check{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--faint);flex-shrink:0}
+  .check.done{background:var(--accent);border-color:var(--accent)}
+  .add{display:flex;gap:6px;margin-bottom:8px}
+  .add input{flex:1;background:var(--soft);border:1px solid var(--line);
+    border-radius:8px;padding:7px 9px;color:var(--text);font-size:12px}
+  .add button{background:var(--accent);color:var(--onAccent);border-radius:8px;padding:0 12px;font-weight:600}
+
+  .bar{height:6px;border-radius:99px;background:var(--soft);overflow:hidden;margin:5px 0}
+  .bar > i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+  .seg{display:flex;height:8px;border-radius:99px;overflow:hidden;margin:6px 0 9px}
+  .seg > i{height:100%}
+
+  textarea{width:100%;min-height:120px;resize:vertical;background:var(--soft);
+    border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--text);
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .pending{font-size:9px;color:var(--warn);margin-left:6px}
+  .muted{color:var(--faint);font-size:11px;text-align:center;padding:14px}
+  .updbar{position:sticky;top:0;z-index:30;background:var(--accent);color:var(--onAccent);
+    font-size:12px;font-weight:600;text-align:center;padding:9px 12px;cursor:pointer}
+
+  /* écran réglages */
+  #setup{position:fixed;inset:0;background:var(--bg);z-index:20;padding:22px 18px;
+    display:none;flex-direction:column;gap:14px;overflow:auto}
+  #setup.show{display:flex}
+  #setup > div > *{margin-bottom:12px}
+  #setup > div > *:last-child{margin-bottom:0}
+  #setup h2{font-size:16px;font-weight:600}
+  #setup label{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--faint);
+    text-transform:uppercase;display:block;margin-bottom:5px}
+  #setup input{width:100%;background:var(--card);border:1px solid var(--line);border-radius:9px;
+    padding:11px;color:var(--text);font-size:14px}
+  #setup .hint{font-size:11px;color:var(--dim);margin-top:5px}
+  #setup .err{color:var(--warn);font-size:12px}
+  #setup .actions{display:flex;gap:8px;margin-top:auto;padding-top:14px}
+  #setup .actions button{flex:1;padding:12px;border-radius:10px;font-weight:600;background:var(--card);border:1px solid var(--line)}
+  #setup .actions .go{background:var(--accent);color:var(--onAccent);border-color:transparent}
+  .theme-seg{display:flex;gap:6px}
+  .theme-seg button{flex:1;padding:9px;border-radius:9px;background:var(--card);
+    border:1px solid var(--line);font-size:12px;color:var(--dim)}
+  .theme-seg button.on{border-color:var(--accent);color:var(--text)}
+  .landing-dl{display:block;text-align:center;background:var(--accent);color:var(--onAccent);
+    padding:13px;border-radius:11px;font-weight:700;font-size:14px}
+  .landing-feat{font-size:12px;color:var(--dim);line-height:1.7}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">◔</div>
+  <h1>Cockpit</h1>
+  <span class="sub" id="stamp"></span>
+  <button id="refreshBtn" aria-label="Rafraîchir">↻</button>
+  <button id="gearBtn" aria-label="Réglages">⚙</button>
+</header>
+
+<main id="app"><p class="muted">Chargement…</p></main>
+
+<section id="setup">
+  <h2>Cockpit</h2>
+
+  <div id="setup-create">
+    <p class="hint" id="landing-pitch">Un tableau de bord personnel pour ton Mac : agenda, mails importants, colis, trajets, météo, to-do, bloc-notes, au même endroit. Cette page en est la version mobile, en lecture, synchronisée avec ton Mac.</p>
+
+    <a class="landing-dl" id="dl-mac" href="Cockpit.dmg" download>Télécharger pour Mac</a>
+    <p class="landing-feat" id="landing-how">Installe l'app, connecte-la avec Google. Reviens ici, connecte-toi avec le même compte : tu retrouves ton tableau de bord sur le téléphone. Tes données ne transitent que par ton serveur.</p>
+
+    <p id="setup-err" class="err"></p>
+    <div class="actions">
+      <button id="btn-google" class="go">Se connecter avec Google</button>
+    </div>
+    <p class="hint" id="setup-who" hidden></p>
+
+    <div>
+      <label>Thème</label>
+      <div class="theme-seg" id="theme-seg">
+        <button data-t="auto">Auto</button>
+        <button data-t="light">Clair</button>
+        <button data-t="dark">Sombre</button>
+      </div>
+    </div>
+
+    <p class="hint">
+      <a id="lnk-key" href="#" style="color:var(--faint)">J'ai une clé de connexion</a>
+    </p>
+    <div class="actions" id="setup-foot" hidden>
+      <button id="btn-close">Retour au cockpit</button>
+    </div>
+  </div>
+
+  <div id="setup-paste" hidden>
+    <p class="hint">Colle une clé de connexion (ancienne méthode, affichée dans Cockpit sur le Mac).</p>
+    <div>
+      <label>Clé de connexion</label>
+      <input id="in-key" type="text" autocomplete="off" autocapitalize="off" placeholder="eyJ1Ijoi…">
+    </div>
+    <p id="paste-err" class="err"></p>
+    <div class="actions">
+      <button id="btn-back">Retour</button>
+      <button id="btn-attach" class="go">Connecter</button>
+    </div>
+  </div>
+</section>
+
+<script>
+const LS = { inst:"cockpit.instance", token:"cockpit.token", email:"cockpit.email", snap:"cockpit.snap", pend:"cockpit.pending" };
+const cfg = { instance: localStorage.getItem(LS.inst) || "", token: localStorage.getItem(LS.token) || "", email: localStorage.getItem(LS.email) || "" };
+
+// Retour du flux Google : #t=<jeton>&e=<email> dans l'URL.
+(function grabAuthHash(){
+  const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+  const t = h.get("t");
+  if(!t) return;
+  cfg.token = t; cfg.instance = ""; cfg.email = h.get("e") || "";
+  localStorage.setItem(LS.token, t);
+  localStorage.removeItem(LS.inst);
+  if(cfg.email) localStorage.setItem(LS.email, cfg.email);
+  history.replaceState(null, "", location.pathname + location.search);
+})();
+let pending = JSON.parse(localStorage.getItem(LS.pend) || "[]");   // [{id,kind,args,label}]
+let snap = JSON.parse(localStorage.getItem(LS.snap) || "null");
+let timer;
+
+const $ = s => document.querySelector(s);
+const el = (t, c, txt) => { const e = document.createElement(t); if(c) e.className=c; if(txt!=null) e.textContent=txt; return e; };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+Math.random()));
+
+// ---- réseau ---------------------------------------------------------------
+// relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
+const RELAY = new URL("relay.php", location.href).href;
+const COCKPIT_VERSION = "0.1";
+const isConfigured = () => !!cfg.token;
+
+function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
+  for(let i=0;i<Math.max(pa.length,pb.length);i++){ const d=(+pa[i]||0)-(+pb[i]||0); if(d) return d>0?1:-1; } return 0; }
+async function checkUpdate(){
+  try{
+    const r = await fetch(new URL("version.json", location.href).href + "?_=" + Date.now(), { cache:"no-store" });
+    if(!r.ok) return;
+    const j = await r.json();
+    if(!j || !j.version || cmpVer(j.version, COCKPIT_VERSION) <= 0) return;
+    let bar = $("#updbar");
+    if(!bar){ bar = el("div"); bar.id = "updbar"; bar.className = "updbar"; document.body.prepend(bar); }
+    bar.textContent = "Nouvelle version (" + j.version + ") — toucher pour recharger";
+    bar.onclick = async ()=>{
+      try{ if(navigator.serviceWorker) for(const g of await navigator.serviceWorker.getRegistrations()) await g.unregister(); }catch(e){}
+      try{ if(window.caches) for(const k of await caches.keys()) await caches.delete(k); }catch(e){}
+      location.reload();
+    };
+  }catch(e){}
+}
+function apiURL(f){
+  return RELAY + "?f=" + f + (cfg.instance ? "&i=" + encodeURIComponent(cfg.instance) : "");
+}
+function authHeaders(extra){
+  return Object.assign({ Authorization:"Bearer "+cfg.token, "X-Auth-Token": cfg.token }, extra||{});
+}
+function b64urlDecode(s){
+  s = s.replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="=";
+  return decodeURIComponent(escape(atob(s)));
+}
+async function apiGet(f){
+  const r = await fetch(apiURL(f), { headers: authHeaders(), cache:"no-store" });
+  if(r.status === 404) return null;
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+async function apiPost(f, obj){
+  const r = await fetch(apiURL(f), { method:"POST",
+    headers: authHeaders({ "Content-Type":"application/json" }),
+    body: JSON.stringify(obj) });
+  if(!r.ok) throw new Error("HTTP "+r.status);
+}
+
+async function refresh(){
+  if(!isConfigured()){ openSetup(); return; }
+  try{
+    const [fleet, settings] = await Promise.all([apiGet("fleet"), apiGet("settings").catch(()=>null)]);
+    const devs = (fleet && fleet.devices || []).slice()
+      .sort((a,b)=> new Date(b.generatedAt) - new Date(a.generatedAt));
+    if(devs.length){
+      snap = mergeFleet(devs);
+      // Réglages partagés : priment sur ce que rapporte le snapshot.
+      if(settings){
+        if(settings.scratchpad && typeof settings.scratchpad.v === "string") snap.scratchpad = settings.scratchpad.v;
+        if(settings.weatherPlace && settings.weatherPlace.v && snap.weather) snap.weather.place = settings.weatherPlace.v;
+        // "lu" des actualités : union avec le local
+        if(settings.newsRead && Array.isArray(settings.newsRead.v)){
+          let n = 0; for(const l of settings.newsRead.v) if(!newsRead.has(l)){ newsRead.add(l); n++; }
+          if(n) localStorage.setItem("cockpit.news.read", JSON.stringify([...newsRead].slice(-300)));
+        }
+      }
+      localStorage.setItem(LS.snap, JSON.stringify(snap));
+      const done = new Set(snap.appliedCommandIds || []);
+      pending = pending.filter(p => !done.has(p.id));
+      savePending();
+      render();
+      pruneCommands(done);
+    }
+    $("#stamp").textContent = snap ? "maj " + fmtTime(new Date()) : "";
+  }catch(e){
+    if(/HTTP 401/.test(e.message)){        // session expirée / révoquée
+      clearInterval(timer);
+      localStorage.removeItem(LS.token); localStorage.removeItem(LS.inst);
+      cfg.token = ""; cfg.instance = "";
+      openSetup();
+      $("#setup-err").textContent = "Session expirée, reconnecte-toi.";
+      return;
+    }
+    $("#stamp").textContent = "hors ligne";
+    if(!snap) $("#app").innerHTML = `<p class="muted">Impossible de joindre le serveur.<br>${e.message}</p>`;
+  }
+}
+
+/// Fusionne les états de tous les appareils de la flotte.
+/// `devs` est trié du plus récent au plus ancien.
+function mergeFleet(devs){
+  const m = { _fleet: devs, generatedAt: devs[0].generatedAt, device: devs[0].device };
+  const primaryName = devs[0].device;
+  m.appliedCommandIds = [...new Set(devs.flatMap(d => d.appliedCommandIds || []))];
+
+  // Cartes « communes » (météo, agenda, mail…) : depuis le 1er appareil qui a
+  // une valeur non vide, évite qu'un Mac qui vient de démarrer ne les efface.
+  const filled = v => v != null
+    && !(Array.isArray(v) && v.length === 0)
+    && !(typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0);
+  const pick = k => (devs.find(d => filled(d[k])) || devs[0])[k];
+  for(const k of ["weather","agenda","todos","news","mail","jobs","parcels","trips","callTime"])
+    m[k] = pick(k);
+  m.scratchpad = devs.map(d => d.scratchpad).find(s => s) || "";
+
+  // Batterie : Macs = une ligne par machine ; BT = union, lecture la plus récente.
+  const bt = {};
+  for(const d of devs){
+    const t0 = new Date(d.generatedAt).getTime();
+    for(const x of (d.battery && d.battery.devices || [])){
+      const at = x.seenAt ? new Date(x.seenAt).getTime() : t0;
+      if(!bt[x.name] || at > bt[x.name]._at)
+        bt[x.name] = { ...x, _at: at, _live: !x.seenAt, _device: d.device, _primary: d.device === primaryName };
+    }
+  }
+  m.battery = {
+    macs: devs.filter(d => d.battery && d.battery.mac)
+              .map(d => ({ device: d.device, ...d.battery.mac })),
+    devices: Object.values(bt).sort((a,b)=> a.percent - b.percent),
+  };
+  return m;
+}
+
+/// Écrit un réglage partagé (bloc-notes, ville météo…) dans settings.json.
+async function setSetting(field, value){
+  try{
+    const file = (await apiGet("settings")) || {};
+    file[field] = { v: value, at: Date.now()/1000 };
+    await apiPost("settings", file);
+  }catch(e){}
+}
+
+async function sendCommand(kind, args, label){
+  const cmd = { id: uuid(), kind, args };
+  pending.push({ ...cmd, label: label || kind });
+  savePending(); render();
+  try{
+    const file = (await apiGet("commands")) || { commands: [] };
+    const done = new Set((snap && snap.appliedCommandIds) || []);
+    file.commands = (file.commands || []).filter(c => !done.has(c.id));   // élagage
+    file.commands.push(cmd);
+    await apiPost("commands", file);
+  }catch(e){
+    // on garde l'action en attente ; nouvelle tentative au prochain envoi/refresh
+  }
+}
+function savePending(){ localStorage.setItem(LS.pend, JSON.stringify(pending)); }
+async function pruneCommands(done){
+  try{
+    const file = await apiGet("commands");
+    if(!file || !file.commands || !file.commands.length) return;
+    const keep = file.commands.filter(c => !done.has(c.id));
+    if(keep.length !== file.commands.length) await apiPost("commands", { commands: keep });
+  }catch(e){}
+}
+function pendingFor(kind, matchArg){
+  return pending.find(p => p.kind===kind && (!matchArg || JSON.stringify(p.args)===JSON.stringify(matchArg)));
+}
+
+// ---- format --------------------------------------------------------------
+const fmtTime = d => d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+function relday(iso){
+  if(!iso) return "";
+  const d = new Date(iso), now = new Date();
+  const days = Math.round((d.setHours(0,0,0,0) - now.setHours(0,0,0,0)) / 864e5);
+  if(days===0) return "auj.";
+  if(days===1) return "demain";
+  if(days===-1) return "hier";
+  if(days>1 && days<7) return d.toLocaleDateString("fr-FR",{weekday:"short"});
+  return new Date(iso).toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
+}
+const hm = iso => iso ? new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) : "";
+const under1d = iso => !!iso && (Date.now() - new Date(iso)) < 86400000;
+const isToday = iso => { if(!iso) return false; const d=new Date(iso), t=new Date();
+  return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate(); };
+function bytes(n){
+  if(!n) return "0";
+  const u=["o","Ko","Mo","Go","To"]; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;}
+  return n.toFixed(n<10&&i>1?1:0)+" "+u[i];
+}
+const WSYM = { "sun.max.fill":"☀️","cloud.sun.fill":"⛅️","cloud.fill":"☁️","cloud.fog.fill":"🌫️",
+  "cloud.drizzle.fill":"🌦️","cloud.rain.fill":"🌧️","cloud.snow.fill":"🌨️","cloud.bolt.rain.fill":"⛈️" };
+const WTINT = { "sun.max.fill":"66,168,242","cloud.sun.fill":"110,150,200","cloud.fill":"120,128,138",
+  "cloud.fog.fill":"120,128,138","cloud.drizzle.fill":"70,120,175","cloud.rain.fill":"70,115,175",
+  "cloud.snow.fill":"165,190,215","cloud.bolt.rain.fill":"100,90,150" };
+const DEVIC = { airpodspro:"🎧",magicmouse:"🖱️",keyboard:"⌨️",trackpad:"🖲️",gamecontroller:"🎮" };
+
+// ---- rendu --------------------------------------------------------------
+function card(title, icon, rightText){
+  const c = el("section","card");
+  const h = el("h2"); h.append(el("span","ic",icon), el("span",null,title));
+  if(rightText) h.append(el("span","rt",rightText));
+  const b = el("div","body");
+  c.append(h,b);
+  return { card:c, body:b };
+}
+
+const newsRead = new Set(JSON.parse(localStorage.getItem("cockpit.news.read")||"[]"));
+const expanded  = new Set(JSON.parse(sessionStorage.getItem("cockpit.expanded")||"[]"));
+const collapsedM = new Set(JSON.parse(sessionStorage.getItem("cockpit.collapsed")||"[]"));
+function persistCollapse(){
+  sessionStorage.setItem("cockpit.expanded", JSON.stringify([...expanded]));
+  sessionStorage.setItem("cockpit.collapsed", JSON.stringify([...collapsedM]));
+}
+
+/// Cartes utiles mais calmes : on ne garde que l'entête (dépliable au clic).
+function quiet(kind){
+  const s = snap;
+  switch(kind){
+    case "mail":   { const it=((s.mail&&s.mail.items)||[]).filter(m=>under1d(m.date));
+      return !it.length || it.every(m=>m.seen); }
+    case "jobs":   { const w=((s.mail&&s.mail.items)||[]).filter(m=>m.reason==="work"&&under1d(m.date));
+      return !w.length || w.every(m=>m.seen); }
+    case "todos":  return !((s.todos||[]).length);
+    case "scratchpad": return !(s.scratchpad||"").trim();
+    case "news":   { if(!s.news) return false;
+      const fresh=(s.news||[]).filter(a=>under1d(a.date));
+      return !fresh.length || fresh.every(a=>newsRead.has(a.link)); }
+    case "agenda": return !((s.agenda||[]).some(e=> isToday(e.start||e.receivedAt)
+      && new Date(e.end||e.start) > Date.now()-1800000));
+    default: return false;
+  }
+}
+const CQUIET = { mail:"tout lu", jobs:"à jour", agenda:"rien aujourd'hui", scratchpad:"vide", news:"tout lu" };
+function collapseNote(kind){
+  if(kind==="news" && quiet("news")){
+    const fresh=(snap.news||[]).filter(a=>under1d(a.date));
+    return fresh.length ? "tout lu" : "rien de neuf";
+  }
+  if(quiet(kind)) return CQUIET[kind] || "";
+  const s = snap;
+  switch(kind){
+    case "mail":   { const n=((s.mail&&s.mail.items)||[]).filter(m=>!m.seen&&under1d(m.date)).length; return n?n+" non lus":""; }
+    case "todos":  { const n=(s.todos||[]).length; return n?String(n):""; }
+    case "news":   { const n=(s.news||[]).filter(a=>under1d(a.date)&&!newsRead.has(a.link)).length; return n?n+" à lire":""; }
+    case "agenda": { const n=(s.agenda||[]).filter(e=>isToday(e.start)).length; return n?n+" aujourd'hui":""; }
+    default: return "";
+  }
+}
+
+function isCollapsed(kind){
+  if(collapsedM.has(kind)) return true;
+  if(expanded.has(kind)) return false;
+  return quiet(kind);
+}
+
+/// Rend chaque carte pliable : clic sur l'entête = bascule plié / déplié.
+function finalize(c, kind){
+  if(typeof c !== "object" || !c) return c;
+  const col = isCollapsed(kind);
+  const h = c.querySelector("h2");
+  if(col){
+    c.classList.add("collapsed");
+    const note = collapseNote(kind);
+    if(note){ const s=el("span","cnote",note); h.insertBefore(s, h.children[2]||null); }
+    if(kind === "todos"){
+      const plus = el("button","cplus","+");
+      plus.style.cssText = "margin-left:auto;color:var(--accent);font-weight:700;font-size:15px;padding:0 4px";
+      plus.onclick = e => { e.stopPropagation(); expanded.add(kind); collapsedM.delete(kind); persistCollapse(); render(); };
+      h.append(plus);
+    }
+  }
+  h.append(el("span","cchev", col ? "▾" : "▴"));
+  h.style.cursor = "pointer";
+  h.onclick = (e)=>{
+    if(e.target.closest("button, a")) return;
+    if(col){ expanded.add(kind); collapsedM.delete(kind); }
+    else   { collapsedM.add(kind); expanded.delete(kind); }
+    persistCollapse(); render();
+  };
+  return c;
+}
+
+function render(){
+  const app = $("#app");
+  app.innerHTML = "";
+  if(!snap){ app.innerHTML = `<p class="muted">Aucune donnée pour l'instant.</p>`; return; }
+
+  // Version mobile volontairement resserrée : pas de disque, batteries,
+  // fuseaux d'appel (ça vit sur le Mac). Ici : ce qui compte maintenant.
+  app.append(
+    finalize(weatherCard(),"weather"), finalize(tripsCard(),"trips"),
+    finalize(agendaCard(),"agenda"), finalize(todosCard(),"todos"),
+    finalize(mailCard(),"mail"), finalize(jobsCard(),"jobs"),
+    finalize(parcelsCard(),"parcels"),
+    finalize(scratchCard(),"scratchpad"), finalize(newsCard(),"news")
+  );
+  for(const n of [...app.childNodes]) if(!n || n.dataset && n.dataset.empty) n.remove && n.remove();
+}
+
+function tripsCard(){
+  const t = snap.trips||[]; if(!t.length) return "";
+  const { card:c, body:b } = card("Trajets","🚆");
+  const soon = t.some(x => { if(!x.departure) return false; const s=(new Date(x.departure)-new Date())/1000; return s<3600 && s>-1800; });
+  if(soon) c.classList.add("alert");
+  const MICON = { train:"🚆", flight:"✈️", boat:"⛴️", bus:"🚌" };
+  for(const x of t){
+    const r = el("div","row box");
+    r.append(el("div",null, MICON[x.mode] || "🚆"));
+    const m = el("div","main");
+    m.append(el("div","t",x.title));
+    m.append(el("div","s", x.departure ? countdown(x.departure) : ("billet reçu "+relday(x.receivedAt))));
+    r.append(m);
+    if(x.departure){
+      const rr = el("div","r");
+      rr.append(el("div","t num", hm(x.departure)), el("div","s", relday(x.departure)));
+      r.append(rr);
+      if(x.mapsURL){ const a=el("a",null,"🗺"); a.href=x.mapsURL; a.style.cssText="font-size:15px;padding:0 4px"; r.append(a); }
+    }
+    b.append(r);
+  }
+  return c;
+}
+function countdown(iso){
+  const s = (new Date(iso) - new Date())/1000;
+  if(s < 0) return "en cours";
+  if(s < 3600) return "dans "+Math.round(s/60)+" min";
+  if(s < 86400) return "dans "+Math.round(s/3600)+" h";
+  return "dans "+Math.round(s/86400)+" j";
+}
+
+function weatherCard(){
+  const w = snap.weather; if(!w) return "";
+  const { card:c, body:b } = card("Météo","◔");
+  const rgb = WTINT[w.symbol] || "120,128,138";
+  c.style.background = `linear-gradient(rgba(${rgb},.16), rgba(${rgb},.05)), var(--card)`;
+  c.style.borderColor = `rgba(${rgb},.35)`;
+  const top = el("div","w-top");
+  top.append(el("div","w-ic",WSYM[w.symbol]||"☁️"));
+  const info = el("div","main");
+  info.append(el("div","w-temp",w.temp+"°"),
+    el("div","s",`max ${w.tempMax}°  min ${w.tempMin}°  ·  ressenti ${w.feels}°`),
+    el("div","t",w.text));
+  if(w.place) info.append(el("div","s","📍 "+w.place));
+  top.append(info); b.append(top);
+
+  const acc = el("button","w-acc");
+  const summary = [`${w.humidity}% hum.`,`${w.wind} km/h`,`pluie ${w.precipProb}%`];
+  if(w.aqiLabel) summary.push("air "+w.aqiLabel);
+  const grid = el("div","w-grid"); grid.hidden = true;
+  const gi = (l,v)=>{ const r=el("div","row"); r.append(el("div","main",l), el("div","r",v)); return r; };
+  grid.append(gi("Humidité",w.humidity+" %"), gi("Vent",w.wind+" km/h"), gi("Pluie",w.precipProb+" %"));
+  if(w.aqi!=null) grid.append(gi("Qualité air",`${w.aqi} · ${w.aqiLabel||""}`));
+  if(w.pollen) grid.append(gi("Pollen",w.pollen));
+  acc.append(el("span",null,summary.join(" · ")), (()=>{const s=el("span");s.textContent="▾";s.style.marginLeft="auto";return s;})());
+  acc.onclick = ()=>{ grid.hidden = !grid.hidden; };
+  b.append(acc, grid);
+  return c;
+}
+
+
+function agendaCard(){
+  if(!snap.agenda) return "";
+  const all = snap.agenda||[];
+  const today = all.filter(e => isToday(e.start||e.receivedAt));
+  const later = all.filter(e => !isToday(e.start||e.receivedAt));
+  const { card:c, body:b } = card("Agenda","▦");
+  const evRow = e => {
+    const r = el("div","row box"), m = el("div","main");
+    m.append(el("div","t",e.title));
+    const when = e.allDay ? "toute la journée" : [hm(e.start), e.location].filter(Boolean).join(" · ");
+    if(when) m.append(el("div","s",when));
+    r.append(m); return r;
+  };
+  if(!today.length) b.append(el("div","muted","Rien aujourd'hui"));
+  for(const e of today) b.append(evRow(e));
+  if(later.length){
+    const acc = el("button","w-acc");
+    acc.append(el("span",null, later.length + " à venir"),
+      (()=>{const s=el("span");s.textContent="▾";s.style.marginLeft="auto";return s;})());
+    const wrap = el("div"); wrap.hidden = true;
+    let day = null;
+    for(const e of later){
+      if(e.dayLabel !== day){ day = e.dayLabel; wrap.append(el("div","sect",day)); }
+      wrap.append(evRow(e));
+    }
+    acc.onclick = ()=>{ wrap.hidden = !wrap.hidden; };
+    b.append(acc, wrap);
+  }
+  return c;
+}
+
+function todosCard(){
+  const items = snap.todos||[];
+  const { card:c, body:b } = card("À faire","✓");
+  const add = el("div","add");
+  const inp = el("input"); inp.placeholder = "Ajouter un rappel…"; inp.enterKeyHint = "done";
+  inp.onkeydown = e=>{ if(e.key==="Enter"){ const t=inp.value.trim(); if(t){ sendCommand("addReminder",{title:t},"rappel"); inp.value=""; } } };
+  add.append(inp); b.append(add);
+
+  if(!items.length && !pendingFor("addReminder")) b.append(el("div","muted","Rien pour aujourd'hui"));
+  for(const t of items){
+    const doneP = pendingFor("completeTodo",{id:t.id});
+    const r = el("div","row");
+    const ck = el("button","check"+(doneP?" done":""));
+    ck.onclick = ()=>{ if(!doneP) sendCommand("completeTodo",{id:t.id},"tâche cochée"); render(); };
+    const m = el("div","main");
+    const tt = el("div","t",t.title); if(doneP) tt.style.textDecoration="line-through";
+    m.append(tt);
+    if(t.overdue) m.append(el("div","s","en retard"));
+    r.append(ck,m);
+    b.append(r);
+  }
+  for(const p of pending.filter(p=>p.kind==="addReminder")){
+    const r = el("div","row"); r.append(el("button","check"), el("div","main",
+      (()=>{ const d=el("div","t",p.args.title); d.append(el("span","pending","en attente…")); return d; })()));
+    b.append(r);
+  }
+  return c;
+}
+
+let mailTab = "*";
+function mailCard(){
+  const mb = snap.mail; if(!mb) return "";
+  mb.items = (mb.items||[]).filter(m => under1d(m.date));   // mobile : dernières 24 h
+  mb.accounts = mb.accounts||[];
+  const { card:c, body:b } = card("Mails importants","✉");
+  const chips = el("div","chips");
+  const mkChip = (id,label,badge)=>{
+    const x = el("button","chip"+(mailTab===id?" on":""), label);
+    if(badge>0){ const s=el("span","b",badge); x.append(s); }
+    x.onclick = ()=>{ mailTab=id; render(); };
+    return x;
+  };
+  const acctCount = a => mb.items.filter(m=>m.account===a.name && !m.seen).length;
+  chips.append(mkChip("*","Tout", mb.items.filter(m=>!m.seen).length));
+  for(const a of mb.accounts) chips.append(mkChip(a.name,a.name,acctCount(a)));
+  if(mb.accounts.length > 1) b.append(chips);
+  const list = mailTab==="*" ? mb.items : mb.items.filter(m=>m.account===mailTab);
+  if(!list.length) b.append(el("div","muted","Rien depuis hier"));
+  const RIC = { flagged:"⚑", keyword:"🏷", work:"💼", contact:"○", known:"↩" };
+  for(const m of list.slice(0,40)){
+    const r = el("div","row");
+    const dot = el("div"); dot.style.cssText="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:"+(m.seen?"transparent":"var(--accent)");
+    const mm = el("div","main");
+    const l1 = el("div","t", m.from);
+    l1.style.fontWeight = m.seen ? 400 : 600;
+    mm.append(l1);
+    const l2 = el("div","s");
+    if(mailTab==="*") l2.append((()=>{const s=el("span");s.textContent=m.account.toUpperCase()+" · ";s.style.color="var(--faint)";return s;})());
+    l2.append(document.createTextNode((RIC[m.reason]||"")+" "+m.subject));
+    mm.append(l2);
+    const rr = el("div","r s", relday(m.date));
+    r.append(dot,mm,rr);
+    b.append(r);
+  }
+  if(mb.otherUnread>0) b.append(el("div","s","+ "+mb.otherUnread+" autres non lus (hors listes)"));
+  return c;
+}
+
+function jobsCard(){
+  if(!snap.jobs) return "";
+  const j = (snap.jobs||[]).filter(a => under1d(a.lastActivity));   // mobile : activité < 24 h
+  const { card:c, body:b } = card("Suivi des candidatures","💼");
+  if(!j.length){ b.append(el("div","muted","Rien de neuf")); return c; }
+  const COL = ["var(--faint)","var(--info)","var(--accent)","var(--warn)"];
+  const active = j.filter(x=>x.stage!==3).length;
+  b.append(el("div","sect", active+" en cours"));
+  for(const a of j){
+    const r = el("div","row box");
+    const bar = el("div"); bar.style.cssText="width:3px;height:26px;border-radius:2px;flex-shrink:0;background:"+COL[a.stage];
+    const m = el("div","main");
+    m.append(el("div","t",a.company), el("div","s",a.lastSubject));
+    const rr = el("div","r");
+    const p = el("div","pill",a.stageLabel);
+    p.style.cssText += `color:${COL[a.stage]};background:color-mix(in srgb,${COL[a.stage]} 15%,transparent)`;
+    rr.append(p, el("div","s",relday(a.lastActivity)));
+    r.append(bar,m,rr);
+    if(a.contactable && a.address){
+      const rl = el("a",null,"↪"); rl.href = "mailto:"+a.address+"?subject="+encodeURIComponent("Suivi de ma candidature");
+      rl.style.cssText="font-size:15px;padding:0 4px"; r.append(rl);
+    }
+    b.append(r);
+  }
+  return c;
+}
+
+function parcelsCard(){
+  const p = snap.parcels||[]; if(!p.length) return "";
+  const { card:c, body:b } = card("Suivi de colis","▣");
+  b.append(el("div","sect", p.filter(x=>x.status!=="Livré").length + " en route"));
+  for(const x of p){
+    const r = el("div","row box");
+    r.append(el("div",null,"▣"));
+    const m = el("div","main");
+    m.append(el("div","t",x.merchant), el("div","s",x.carrier + (x.number?" · "+x.number:"")));
+    const rr = el("div","r");
+    rr.append(el("div","pill",x.status), el("div","s",relday(x.date)));
+    r.append(m,rr);
+    if(x.trackingURL){ const a=el("a",null,"↗"); a.href=x.trackingURL; a.target="_blank"; a.style.cssText="font-size:15px;padding:0 4px"; r.append(a); }
+    b.append(r);
+  }
+  return c;
+}
+
+let scratchDraft = null;
+function scratchCard(){
+  const { card:c, body:b } = card("Bloc-notes","▤");
+  const ta = el("textarea");
+  ta.value = scratchDraft ?? (snap.scratchpad || "");
+  let t;
+  ta.oninput = ()=>{
+    scratchDraft = ta.value;
+    clearTimeout(t);
+    t = setTimeout(()=>{ setSetting("scratchpad", ta.value); scratchDraft = null; }, 1200);
+  };
+  b.append(ta);
+  return c;
+}
+
+function newsCard(){
+  if(!snap.news) return "";
+  const n = (snap.news||[]).filter(a => under1d(a.date));   // mobile : dernières 24 h
+  const { card:c, body:b } = card("Actualités","▤");
+  if(!n.length) b.append(el("div","muted","Rien de neuf"));
+  for(const a of n.slice(0,20)){
+    const isRead = newsRead.has(a.link);
+    const r = el("div","row");
+    const m = el("div","main");
+    const t = el("div","t", a.title); t.style.whiteSpace="normal"; if(isRead) t.style.color="var(--faint)";
+    m.append(t, el("div","s", (a.source||"") + (a.date ? " · " + relday(a.date) : "")));
+    r.append(m);
+    r.onclick = ()=>{
+      if(a.link){
+        window.open(a.link, "_blank");
+        newsRead.add(a.link);
+        localStorage.setItem("cockpit.news.read", JSON.stringify([...newsRead].slice(-300)));
+        setSetting("newsRead", [...newsRead].slice(-300));   // partagé entre appareils
+        render();
+      }
+    };
+    r.style.cursor = "pointer";
+    b.append(r);
+  }
+  return c;
+}
+
+// ---- réglages ----------------------------------------------------------
+function showPane(id){
+  for(const p of ["setup-create","setup-paste"]) $("#"+p).hidden = (p !== id);
+}
+function openSetup(){
+  $("#setup-err").textContent = ""; $("#paste-err").textContent = "";
+  showPane("setup-create");
+  const who = $("#setup-who"), conf = isConfigured();
+  // Éléments "landing" (pour un visiteur navigateur non connecté).
+  for(const id of ["landing-pitch","dl-mac","landing-how"]) $("#"+id).hidden = conf;
+  $("#setup-foot").hidden = !conf;                 // bouton "Retour au cockpit"
+  $("#lnk-key").parentElement.hidden = conf;
+  if(conf){
+    who.hidden = false;
+    who.innerHTML = "";
+    who.append(document.createTextNode((cfg.email ? cfg.email + " · " : "Connecté · ")));
+    const a = el("a", null, "Se déconnecter"); a.href = "#"; a.style.color = "var(--warn)";
+    a.onclick = e=>{ e.preventDefault(); signOut(); };
+    who.append(a);
+    $("#btn-google").textContent = "Changer de compte Google";
+  } else {
+    who.hidden = true;
+    $("#btn-google").textContent = "Se connecter avec Google";
+  }
+  syncThemeSeg();
+  $("#setup").classList.add("show");
+}
+function closeSetup(){ if(isConfigured()) $("#setup").classList.remove("show"); }
+$("#gearBtn").onclick = openSetup;
+$("#btn-close").onclick = closeSetup;
+
+// ---- thème -----------------------------------------------------------------
+function applyTheme(){
+  const t = localStorage.getItem("cockpit.theme") || "auto";
+  const root = document.documentElement;
+  if(t === "auto") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", t);
+  const dark = t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if(m) m.content = dark ? "#0f1115" : "#f4f5f7";
+}
+function syncThemeSeg(){
+  const cur = localStorage.getItem("cockpit.theme") || "auto";
+  for(const b of document.querySelectorAll("#theme-seg button"))
+    b.classList.toggle("on", b.dataset.t === cur);
+}
+for(const b of document.querySelectorAll("#theme-seg button")){
+  b.onclick = ()=>{ localStorage.setItem("cockpit.theme", b.dataset.t); applyTheme(); syncThemeSeg(); };
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+applyTheme();
+$("#lnk-key").onclick = e=>{ e.preventDefault(); $("#paste-err").textContent=""; showPane("setup-paste"); };
+$("#btn-back").onclick  = ()=> showPane("setup-create");
+
+$("#btn-google").onclick = ()=>{
+  location.href = RELAY + "?auth=start";   // le relais renvoie vers cette PWA
+};
+
+$("#btn-attach").onclick = async ()=>{
+  try{
+    applyKey($("#in-key").value.trim());
+  }catch(e){ $("#paste-err").textContent = "Clé illisible."; return; }
+  try{
+    await apiGet("settings");
+    $("#setup").classList.remove("show");
+    startLoop();
+  }catch(e){
+    $("#paste-err").textContent = "Connexion refusée ("+e.message+").";
+  }
+};
+
+function applyKey(key){
+  const o = JSON.parse(b64urlDecode(key));   // { u, i, t }
+  if(!o.i || !o.t) throw new Error("clé incomplète");
+  cfg.instance = o.i; cfg.token = o.t;
+  localStorage.setItem(LS.inst, o.i);
+  localStorage.setItem(LS.token, o.t);
+}
+
+async function signOut(){
+  try{ await fetch(RELAY + "?auth=logout", { method:"POST", headers: authHeaders() }); }catch(e){}
+  localStorage.removeItem(LS.token); localStorage.removeItem(LS.inst);
+  localStorage.removeItem(LS.email); localStorage.removeItem(LS.snap);
+  location.reload();
+}
+
+$("#refreshBtn").onclick = ()=>refresh();
+
+function startLoop(){
+  clearInterval(timer);
+  refresh();
+  timer = setInterval(refresh, 60000);
+}
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) refresh(); });
+
+if(snap) render();
+if(isConfigured()) startLoop(); else openSetup();
+
+checkUpdate();
+setInterval(checkUpdate, 3600000);
+
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
