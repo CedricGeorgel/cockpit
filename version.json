@@ -1,1 +1,1 @@
-{"version":"0.9","url":"Cockpit.dmg","notes":"Mode local : \u00ab Commencer (ce Mac uniquement) \u00bb, utilisable sans compte ni serveur"}
+{"version":"0.10","url":"Cockpit.dmg","notes":"PWA : auto-gu\u00e9rison du service worker (sw.js versionn\u00e9, force une MAJ quand la version serveur est plus r\u00e9cente) + \u00ab Forcer la mise \u00e0 jour \u00bb dans les r\u00e9glages"}

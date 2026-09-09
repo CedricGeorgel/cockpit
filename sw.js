@@ -1,9 +1,13 @@
 // Service worker : coquille hors-ligne. Les appels API (relay.php) ne sont
 // JAMAIS mis en cache. La navigation est "réseau d'abord" pour récupérer
 // les mises à jour de la PWA immédiatement.
-const CACHE = "cockpit-shell-v5";
+const CACHE = "cockpit-shell-v6";
 const SHELL = ["./", "index.html", "manifest.webmanifest",
                "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
+
+self.addEventListener("message", e => {
+  if (e.data && e.data.type === "SKIP_WAITING") self.skipWaiting();
+});
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

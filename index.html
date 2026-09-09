@@ -197,6 +197,8 @@
 
     <p class="hint">
       <a id="lnk-key" href="#" style="color:var(--faint)">J'ai une clé de connexion</a>
+      &nbsp;·&nbsp;
+      <a id="lnk-force" href="#" style="color:var(--faint)">Forcer la mise à jour</a>
     </p>
     <div class="actions" id="setup-foot" hidden>
       <button id="btn-close">Retour au cockpit</button>
@@ -243,25 +245,33 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.9";
+const COCKPIT_VERSION = "0.10";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
   for(let i=0;i<Math.max(pa.length,pb.length);i++){ const d=(+pa[i]||0)-(+pb[i]||0); if(d) return d>0?1:-1; } return 0; }
+async function nukeAndReload(){
+  try{ if(navigator.serviceWorker) for(const g of await navigator.serviceWorker.getRegistrations()) await g.unregister(); }catch(e){}
+  try{ if(window.caches) for(const k of await caches.keys()) await caches.delete(k); }catch(e){}
+  location.replace(location.pathname + "?_=" + Date.now());
+}
 async function checkUpdate(){
   try{
     const r = await fetch(new URL("version.json", location.href).href + "?_=" + Date.now(), { cache:"no-store" });
     if(!r.ok) return;
     const j = await r.json();
     if(!j || !j.version || cmpVer(j.version, COCKPIT_VERSION) <= 0) return;
+
+    // Auto-guérison : si la version servie est plus récente, on force UNE fois
+    // (SW iOS parfois coincé). Sinon on laisse le bandeau.
+    if(!sessionStorage.getItem("cockpit.forced." + j.version)){
+      sessionStorage.setItem("cockpit.forced." + j.version, "1");
+      return nukeAndReload();
+    }
     let bar = $("#updbar");
     if(!bar){ bar = el("div"); bar.id = "updbar"; bar.className = "updbar"; document.body.prepend(bar); }
     bar.textContent = "Nouvelle version (" + j.version + ") — toucher pour recharger";
-    bar.onclick = async ()=>{
-      try{ if(navigator.serviceWorker) for(const g of await navigator.serviceWorker.getRegistrations()) await g.unregister(); }catch(e){}
-      try{ if(window.caches) for(const k of await caches.keys()) await caches.delete(k); }catch(e){}
-      location.reload();
-    };
+    bar.onclick = nukeAndReload;
   }catch(e){}
 }
 function apiURL(f){
@@ -832,6 +842,7 @@ function openSetup(){
 function closeSetup(){ if(isConfigured()) $("#setup").classList.remove("show"); }
 $("#gearBtn").onclick = openSetup;
 $("#btn-close").onclick = closeSetup;
+$("#lnk-force").onclick = e=>{ e.preventDefault(); nukeAndReload(); };
 
 // ---- thème -----------------------------------------------------------------
 function applyTheme(){
@@ -903,7 +914,26 @@ if(isConfigured()) startLoop(); else openSetup();
 checkUpdate();
 setInterval(checkUpdate, 900000);   // 15 min ; + à chaque retour sur l'onglet
 
-if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+// SW : l'URL porte la version → toute nouvelle version force la mise à jour du
+// worker. On déclenche aussi un update() explicite et on recharge quand un
+// nouveau worker prend la main.
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js?v=" + COCKPIT_VERSION).then(reg => {
+    reg.update().catch(()=>{});
+    reg.addEventListener("updatefound", () => {
+      const nw = reg.installing;
+      nw && nw.addEventListener("statechange", () => {
+        if(nw.state === "installed" && navigator.serviceWorker.controller){
+          nw.postMessage({ type: "SKIP_WAITING" });
+        }
+      });
+    });
+  }).catch(()=>{});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if(reloaded) return; reloaded = true; location.reload();
+  });
+}
 </script>
 </body>
 </html>
