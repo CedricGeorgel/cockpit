@@ -9,6 +9,14 @@ return [
     'google_client_id'     => '',   // ....apps.googleusercontent.com
     'google_client_secret' => '',   // GOCSPX-....
 
+    // --- Chiffrement au repos des données (AES-256-GCM) ---
+    // Génère la clé une fois :  openssl rand -hex 32
+    // Absente/vide → les fichiers data/ restent en clair. Une fois posée, les
+    // écritures suivantes sont chiffrées (migration transparente à la volée).
+    // NE CHANGE JAMAIS cette clé sans vider data/ : les anciens fichiers
+    // deviendraient illisibles.
+    'data_key' => '',
+
     // --- Rétro-compat : ancienne création d'instance par clé (?new) ---
     //   ''        n'importe qui peut créer une instance (par défaut)
     //   'xyz…'    il faut ce code

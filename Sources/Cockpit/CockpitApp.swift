@@ -65,13 +65,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 }
 
+/// Barrière de connexion : pas de compte relié → écran de connexion, rien ne
+/// tourne. Le jeton de session (`cockpit.remote.token`) fait la bascule.
+struct RootView: View {
+    @AppStorage("cockpit.remote.token") private var token = ""
+
+    var body: some View {
+        if token.isEmpty {
+            SignInView()
+        } else {
+            DashboardView()
+        }
+    }
+}
+
 @main
 struct CockpitApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
     var body: some Scene {
         WindowGroup("Cockpit") {
-            DashboardView()
+            RootView()
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1360, height: 880)

@@ -35,7 +35,44 @@ $MAX     = (int)    ($cfg['max_instances']  ?? 50);
 $DATA    = $cfg['data_dir'] ?? (__DIR__ . '/data');
 $GCID    = (string) ($cfg['google_client_id']     ?? '');
 $GCSECRET= (string) ($cfg['google_client_secret'] ?? '');
+// Chiffrement au repos des fichiers de données (AES-256-GCM). Clé = 64 hex dans
+// config.php['data_key'] (openssl rand -hex 32). Absente → stockage en clair.
+$DKEY = (function () use ($cfg) {
+    $k = @hex2bin((string) ($cfg['data_key'] ?? ''));
+    return ($k !== false && strlen($k) === 32 && function_exists('openssl_encrypt')) ? $k : '';
+})();
 @mkdir($DATA, 0755, true);
+
+/// Chiffre si une clé est configurée, sinon renvoie tel quel.
+function enc(string $plain): string {
+    global $DKEY;
+    if ($DKEY === '') return $plain;
+    $iv  = random_bytes(12);
+    $tag = '';
+    $ct  = openssl_encrypt($plain, 'aes-256-gcm', $DKEY, OPENSSL_RAW_DATA, $iv, $tag);
+    return $ct === false ? $plain : "CKE1" . $iv . $tag . $ct;
+}
+/// Déchiffre un blob « CKE1… » ; laisse passer le clair (fichiers hérités).
+function dec(?string $blob): string {
+    if ($blob === null || $blob === '') return '';
+    if (substr($blob, 0, 4) !== "CKE1") return $blob;
+    global $DKEY;
+    if ($DKEY === '') return '';
+    $p = openssl_decrypt(substr($blob, 32), 'aes-256-gcm', $DKEY, OPENSSL_RAW_DATA,
+                         substr($blob, 4, 12), substr($blob, 16, 16));
+    return $p === false ? '' : $p;
+}
+function store_get(string $path): ?string {
+    if (!is_file($path)) return null;
+    $raw = @file_get_contents($path);
+    return $raw === false ? null : dec($raw);
+}
+function store_put(string $path, string $plain): bool {
+    $tmp = $path . '.tmp' . getmypid();
+    if (@file_put_contents($tmp, enc($plain), LOCK_EX) === false) { @unlink($tmp); return false; }
+    if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+    return true;
+}
 
 // ---------------------------------------------------------------- authentification
 $auth = $_GET['auth'] ?? '';
@@ -121,11 +158,11 @@ function auth_fail(string $msg): void {
 function account_dir_for_token(string $DATA, ?string $tok): ?array {
     if (!$tok) return null;
     $sf = $DATA . '/sess/' . hash('sha256', $tok) . '.json';
-    $sj = @json_decode(@file_get_contents($sf), true);
+    $sj = json_decode((string) store_get($sf), true);
     if (!is_array($sj) || empty($sj['acct'])) return null;
     if (time() - ($sj['seen'] ?? 0) > 86400) {
         $sj['seen'] = time();
-        @file_put_contents($sf, json_encode($sj));
+        store_put($sf, json_encode($sj));
     }
     return ['dir' => $DATA . '/acct/' . $sj['acct'], 'sess' => $sj];
 }
@@ -162,7 +199,7 @@ function handle_auth(string $auth, string $DATA, string $GCID, string $GCSECRET)
         $r = $isApp ? 'cockpit://auth' : $webReturn;
 
         $state = bin2hex(random_bytes(16));
-        file_put_contents($odir . '/' . $state . '.json', json_encode(['redirect' => $r]));
+        store_put($odir . '/' . $state . '.json', json_encode(['redirect' => $r]));
         $q = http_build_query([
             'client_id'     => $GCID,
             'redirect_uri'  => $redirect_uri,
@@ -181,7 +218,7 @@ function handle_auth(string $auth, string $DATA, string $GCID, string $GCSECRET)
         $code  = (string) ($_GET['code'] ?? '');
         if (!preg_match('/^[a-f0-9]{32}$/', $state)) auth_fail('State invalide.');
         $spath = $odir . '/' . $state . '.json';
-        $sj = @json_decode(@file_get_contents($spath), true);
+        $sj = json_decode((string) store_get($spath), true);
         @unlink($spath);
         if (!is_array($sj)) auth_fail('Session de connexion expirée, réessaie.');
         if (isset($_GET['error'])) auth_fail('Google a refusé la connexion (' . htmlspecialchars($_GET['error']) . ').');
@@ -209,17 +246,17 @@ function handle_auth(string $auth, string $DATA, string $GCID, string $GCSECRET)
         $acct = substr(hash('sha256', $sub), 0, 24);
         @mkdir($DATA . '/acct/' . $acct, 0755, true);
         $opath = $DATA . '/acct/' . $acct . '/owner.json';
-        $owner = @json_decode(@file_get_contents($opath), true) ?: [];
+        $owner = json_decode((string) store_get($opath), true) ?: [];
         $owner['sub']   = $sub;
         $owner['email'] = $claims['email'] ?? ($owner['email'] ?? '');
         $owner['name']  = $claims['name']  ?? ($owner['name']  ?? '');
         $owner['created'] = $owner['created'] ?? time();
         $owner['seen']  = time();
-        @file_put_contents($opath, json_encode($owner));
+        store_put($opath, json_encode($owner));
 
         $sess = bin2hex(random_bytes(24));   // 48 hex, jamais journalisé (fragment #)
         @mkdir($DATA . '/sess', 0755, true);
-        @file_put_contents($DATA . '/sess/' . hash('sha256', $sess) . '.json', json_encode([
+        store_put($DATA . '/sess/' . hash('sha256', $sess) . '.json', json_encode([
             'acct'    => $acct,
             'email'   => $owner['email'],
             'name'    => $owner['name'],
@@ -246,14 +283,14 @@ function rmrf(string $d): void { array_map('unlink', glob($d . '/*') ?: []); @rm
 function gc_instances(string $DATA): void {
     // Sessions Google inactives depuis 90 j.
     foreach (glob($DATA . '/sess/*.json') ?: [] as $sf) {
-        $sj = @json_decode(@file_get_contents($sf), true);
+        $sj = json_decode((string) store_get($sf), true);
         if (!is_array($sj) || time() - ($sj['seen'] ?? filemtime($sf)) > 90 * 86400) @unlink($sf);
     }
     // Comptes : purge des dev.*.json > 30 j ; compte sans appareil ET inactif > 60 j → supprimé.
     foreach (glob($DATA . '/acct/*', GLOB_ONLYDIR) ?: [] as $d) {
         foreach (glob($d . '/dev.*.json') ?: [] as $df)
             if (time() - filemtime($df) > 30 * 86400) @unlink($df);
-        $owner = @json_decode(@file_get_contents($d . '/owner.json'), true) ?: [];
+        $owner = json_decode((string) store_get($d . '/owner.json'), true) ?: [];
         if (!glob($d . '/dev.*.json') && time() - ($owner['seen'] ?? 0) > 60 * 86400) rmrf($d);
     }
     // Anciennes instances (?new) : mêmes règles qu'avant.
@@ -324,7 +361,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 if (($f === 'fleet' || $f === 'fleet_compat') && $method === 'GET') {
     $devs = [];
     foreach (glob($idir . '/dev.*.json') ?: [] as $df) {
-        $j = json_decode(file_get_contents($df));
+        $j = json_decode((string) store_get($df));
         if ($j) { $j->_mtime = filemtime($df); $devs[] = $j; }
     }
     header('Content-Type: application/json');
@@ -352,8 +389,8 @@ if ($f === 'commands' || $f === 'settings') {
     if ($method === 'GET') {
         header('Content-Type: application/json');
         header('Cache-Control: no-store');
-        if (!is_file($path)) { echo '{}'; exit; }      // rien encore poussé : objet vide, pas 404
-        readfile($path);
+        $body = store_get($path);
+        echo ($body === null || $body === '') ? '{}' : $body;
         exit;
     }
     if ($method === 'POST' || $method === 'PUT') write_json($path);
@@ -365,11 +402,7 @@ function write_json(string $path): void {
     if (strlen($raw) === 0 || strlen($raw) > 5 * 1024 * 1024) out(['error' => 'corps vide ou trop gros'], 413);
     json_decode($raw);
     if (json_last_error() !== JSON_ERROR_NONE) out(['error' => 'JSON invalide'], 400);
-    $tmp = $path . '.tmp' . getmypid();
-    if (file_put_contents($tmp, $raw, LOCK_EX) === false || !rename($tmp, $path)) {
-        @unlink($tmp);
-        out(['error' => 'écriture impossible'], 500);
-    }
+    if (!store_put($path, $raw)) out(['error' => 'écriture impossible'], 500);
     http_response_code(204);
     exit;
 }
