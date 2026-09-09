@@ -43,7 +43,7 @@ rm -rf "$(dirname "$PKG")"
 echo "✓ cockpit-deploy.zip prêt ($(du -sh cockpit-deploy.zip | cut -f1))"
 
 echo
-echo "DMG : envoie Cockpit-$VERSION.dmg (au 1er lancement : clic droit → Ouvrir)."
-echo "Serveur : git (init.php une fois, puis deploy.php) ou FTP du zip."
-echo "Après un bump de VERSION : commit version.json + index.html, et"
-echo "téléverse le nouveau Cockpit.dmg (git-ignoré)."
+echo "Pour publier :"
+echo "  git add -A && git commit -m \"v$VERSION\" && git push"
+echo "→ la CI appelle deploy.php ; Cockpit.dmg + version.json partent avec (versionnés)."
+echo "Rien à faire en FTP. (Cockpit-$VERSION.dmg garde le numéro pour tes archives.)"
