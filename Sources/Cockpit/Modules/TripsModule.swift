@@ -22,6 +22,16 @@ struct Trip: Identifiable {
 
 enum TripsDigest {
 
+    /// Où en est le trajet, pour savoir quelle heure montrer (ou s'il faut le masquer).
+    enum Phase { case upcoming, inTransit, done, ticket }
+
+    static func phase(_ t: Trip, now: Date = Date()) -> Phase {
+        guard let dep = t.departure else { return .ticket }
+        if now < dep { return .upcoming }
+        let end = t.arrival ?? dep.addingTimeInterval(3 * 3600)   // durée par défaut si l'agenda n'a pas de fin
+        return now > end.addingTimeInterval(60) ? .done : .inTransit
+    }
+
     private static let trainTerms = [
         "gare", "tgv", "ouigo", "inoui", "sncf", "train", "eurostar", "thalys", "ter ",
         "intercités", "lyria", "renfe", "trenitalia", "trainline", "db ", "ice ", "railjet",
@@ -39,8 +49,8 @@ enum TripsDigest {
     static func compute(_ events: [AgendaItem], mails: [MailModel.Mail] = [], now: Date = Date()) -> [Trip] {
         let horizon = now.addingTimeInterval(6 * 86_400)
         var trips = events.compactMap { e -> Trip? in
-            guard let start = e.start, start > now.addingTimeInterval(-3600), start < horizon,
-                  !e.allDay else { return nil }
+            guard let start = e.start, start < horizon,
+                  start > now.addingTimeInterval(-18 * 3600), !e.allDay else { return nil }
             let hay = (e.title + " " + (e.location ?? "")).folding(options: .diacriticInsensitive, locale: nil).lowercased()
             guard let mode = detect(hay, title: e.title) else { return nil }
             return Trip(id: e.id, title: e.title, origin: originGuess(e),
@@ -64,10 +74,12 @@ enum TripsDigest {
                               messageID: m.messageID, receivedAt: m.date))
         }
 
-        return trips.sorted {
-            ($0.departure ?? .distantFuture, $0.receivedAt ?? .distantPast)
-                < ($1.departure ?? .distantFuture, $1.receivedAt ?? .distantPast)
-        }
+        return trips
+            .filter { phase($0, now: now) != .done }   // 1 min après l'arrivée : on retire le trajet
+            .sorted {
+                ($0.departure ?? .distantFuture, $0.receivedAt ?? .distantPast)
+                    < ($1.departure ?? .distantFuture, $1.receivedAt ?? .distantPast)
+            }
     }
 
     private static func detect(_ hay: String, title: String) -> Trip.Mode? {
@@ -136,24 +148,35 @@ struct TripsModule: View {
     }
 
     private func row(_ t: Trip) -> some View {
-        HStack(spacing: 9) {
+        let phase = TripsDigest.phase(t, now: now)
+        // En amont : heure de départ. Une fois parti : heure d'arrivée.
+        let inTransit = phase == .inTransit
+        let mainDate = inTransit ? (t.arrival ?? t.departure) : t.departure
+
+        return HStack(spacing: 9) {
             Image(systemName: t.mode.icon)
-                .font(.system(size: 13)).foregroundStyle(Theme.accent).frame(width: 18)
+                .font(.system(size: 13))
+                .foregroundStyle(inTransit ? Theme.textDim : Theme.accent).frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.title).font(.ui(12, .medium)).foregroundStyle(Theme.text).lineLimit(1)
-                if let dep = t.departure {
+                if inTransit, let arr = t.arrival {
+                    Text("arrivée \(countdown(to: arr))").font(.ui(9)).foregroundStyle(Theme.textFaint)
+                } else if inTransit {
+                    Text("en cours").font(.ui(9)).foregroundStyle(Theme.textFaint)
+                } else if let dep = t.departure {
                     Text(countdown(to: dep)).font(.ui(9)).foregroundStyle(Theme.textFaint)
                 } else if let r = t.receivedAt {
                     Text("billet reçu \(Fmt.relday(r))").font(.ui(9)).foregroundStyle(Theme.textFaint)
                 }
             }
             Spacer(minLength: 4)
-            if let dep = t.departure {
+            if let date = mainDate {
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text(Fmt.shortTime(dep)).font(.num(14, .semibold)).foregroundStyle(Theme.text)
-                    Text(Fmt.relday(dep)).font(.ui(8.5)).foregroundStyle(Theme.textFaint)
+                    Text(Fmt.shortTime(date)).font(.num(14, .semibold)).foregroundStyle(Theme.text)
+                    Text(inTransit ? "arrivée" : Fmt.relday(date))
+                        .font(.ui(8.5)).foregroundStyle(Theme.textFaint)
                 }
-                if let url = TripsDigest.mapsURL(for: t.origin) {
+                if !inTransit, let url = TripsDigest.mapsURL(for: t.origin) {
                     Button { NSWorkspace.shared.open(url) } label: {
                         Image(systemName: "map").font(.system(size: 11))
                     }

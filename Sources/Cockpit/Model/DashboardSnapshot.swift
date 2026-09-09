@@ -31,6 +31,7 @@ struct DashboardSnapshot: Codable {
         var title: String
         var origin: String
         var departure: Date?      // absent = billet repéré dans un mail, heure inconnue
+        var arrival: Date?        // heure d'arrivée (une fois parti, c'est elle qu'on affiche)
         var receivedAt: Date?
         var mode: String          // train | flight | boat | bus
         var mapsURL: String?
@@ -225,7 +226,7 @@ enum SnapshotBuilder {
         let trips = TripsDigest.compute(s.calendar.events, mails: allMailsForTrips).map { t in
             DashboardSnapshot.Trip(
                 id: t.id, title: t.title, origin: t.origin, departure: t.departure,
-                receivedAt: t.receivedAt, mode: "\(t.mode)",
+                arrival: t.arrival, receivedAt: t.receivedAt, mode: "\(t.mode)",
                 mapsURL: t.origin.isEmpty ? nil : TripsDigest.mapsURL(for: t.origin)?.absoluteString)
         }
 

@@ -19,9 +19,13 @@ struct DashboardView: View {
     @State private var manualExpand: Set<ModuleKind> = []
     @State private var manualCollapse: Set<ModuleKind> = []
     @State private var scratchEmpty = ScratchStore.load().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// Force la ré-évaluation de ce qui dépend de l'heure (trajet parti / arrivé, alertes).
+    @State private var clockTick = Date()
+    private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ZStack {
+        let _ = clockTick   // dépendance : body se rejoue toutes les 30 s
+        return ZStack {
             AppBackground()
             VStack(spacing: 0) {
                 TopBar(canvas: canvas, theme: $theme)
@@ -31,6 +35,7 @@ struct DashboardView: View {
         }
         .frame(minWidth: 940, minHeight: 640)
         .preferredColorScheme(theme == "light" ? .light : theme == "dark" ? .dark : nil)
+        .onReceive(clock) { clockTick = $0 }
         .onAppear { services.startAll() }
         .onReceive(NotificationCenter.default.publisher(for: .cockpitScratchpadChanged)) { _ in
             scratchEmpty = ScratchStore.load().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -176,23 +181,23 @@ struct DashboardView: View {
         TripsDigest.compute(calendar.events, mails: mail.sources.flatMap { mail.state($0.id).mails })
     }
 
-    /// Une carte passe en alerte (bordure orange) quand elle porte une info urgente.
+    /// Une carte passe en alerte (bordure orange) : départ dans moins d'1 h (pas encore parti).
     private func alerting(_ kind: ModuleKind) -> Bool {
         guard kind == .trips, !canvas.editing else { return false }
         return tripsList.contains {
             guard let dep = $0.departure else { return false }
             let dt = dep.timeIntervalSinceNow
-            return dt < 3600 && dt > -1800
+            return dt > 0 && dt < 3600
         }
     }
 
-    /// Alerte renforcée (rouge vif) : trajet dans moins de 30 minutes.
+    /// Alerte renforcée (rouge vif) : départ dans moins de 30 minutes.
     private func urgentAlerting(_ kind: ModuleKind) -> Bool {
         guard kind == .trips, !canvas.editing else { return false }
         return tripsList.contains {
             guard let dep = $0.departure else { return false }
             let dt = dep.timeIntervalSinceNow
-            return dt < 1800 && dt > -1800
+            return dt > 0 && dt < 1800
         }
     }
 
@@ -250,6 +255,7 @@ struct DashboardView: View {
 
 struct UpdateBanner: View {
     let update: UpdateChecker.Available
+    @ObservedObject private var checker = UpdateChecker.shared
     @State private var dismissed = false
 
     var body: some View {
@@ -259,8 +265,11 @@ struct UpdateBanner: View {
                 Text("Cockpit \(update.version) est disponible" + (update.notes.isEmpty ? "" : " · \(update.notes)"))
                     .font(.ui(11, .medium)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer(minLength: 8)
-                Button("Télécharger") { UpdateChecker.shared.openDownload() }
-                    .buttonStyle(GhostButtonStyle(prominent: true))
+                Button(checker.downloading ? "Téléchargement…" : "Télécharger") {
+                    UpdateChecker.shared.openDownload()
+                }
+                .buttonStyle(GhostButtonStyle(prominent: true))
+                .disabled(checker.downloading)
                 Button { dismissed = true } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textFaint)
                 }.buttonStyle(.plain)

@@ -99,7 +99,37 @@ final class UpdateChecker: ObservableObject {
         return false
     }
 
+    @Published private(set) var downloading = false
+
+    /// Télécharge le DMG **via URLSession** (pas de drapeau `com.apple.quarantine`,
+    /// contrairement à un navigateur) puis le monte : plus d'avertissement
+    /// « application non identifiée » de Gatekeeper à chaque mise à jour.
     func openDownload() {
-        if let u = available?.url { NSWorkspace.shared.open(u) }
+        guard let a = available, !downloading else {
+            if let u = available?.url { NSWorkspace.shared.open(u) }
+            return
+        }
+        downloading = true
+
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Cockpit", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent("Cockpit-\(a.version).dmg")
+
+        let fallback = { DispatchQueue.main.async { NSWorkspace.shared.open(a.url) } }
+
+        URLSession.shared.downloadTask(with: a.url) { tmp, resp, err in
+            defer { DispatchQueue.main.async { self.downloading = false } }
+            guard let tmp, err == nil,
+                  (resp as? HTTPURLResponse).map({ (200...299).contains($0.statusCode) }) ?? true
+            else { fallback(); return }
+            try? FileManager.default.removeItem(at: dest)
+            do {
+                try FileManager.default.moveItem(at: tmp, to: dest)
+                DispatchQueue.main.async {
+                    NSWorkspace.shared.open(dest)   // monte le DMG (aucune quarantaine)
+                }
+            } catch { fallback() }
+        }.resume()
     }
 }

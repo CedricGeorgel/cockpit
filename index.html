@@ -241,7 +241,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.4";
+const COCKPIT_VERSION = "0.5";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -527,26 +527,41 @@ function render(){
   for(const n of [...app.childNodes]) if(!n || n.dataset && n.dataset.empty) n.remove && n.remove();
 }
 
+// Où en est le trajet : avant le départ, en cours, ou fini (1 min après l'arrivée).
+function tripPhase(x){
+  if(!x.departure) return "ticket";
+  const now = Date.now(), dep = +new Date(x.departure);
+  if(now < dep) return "upcoming";
+  const end = x.arrival ? +new Date(x.arrival) : dep + 3*3600*1000;
+  return now > end + 60000 ? "done" : "transit";
+}
 function tripsCard(){
-  const t = snap.trips||[]; if(!t.length) return "";
+  const t = (snap.trips||[]).filter(x => tripPhase(x) !== "done");
+  if(!t.length) return "";
   const { card:c, body:b } = card("Trajets","🚆");
-  const secsTo = x => x.departure ? (new Date(x.departure)-new Date())/1000 : Infinity;
-  const soon   = t.some(x => { const s=secsTo(x); return s<3600 && s>-1800; });
-  const urgent = t.some(x => { const s=secsTo(x); return s<1800 && s>-1800; });
+  const secsToDep = x => x.departure ? (+new Date(x.departure)-Date.now())/1000 : Infinity;
+  const soon   = t.some(x => { const s=secsToDep(x); return s>0 && s<3600; });
+  const urgent = t.some(x => { const s=secsToDep(x); return s>0 && s<1800; });
   if(urgent) c.classList.add("urgent"); else if(soon) c.classList.add("alert");
   const MICON = { train:"🚆", flight:"✈️", boat:"⛴️", bus:"🚌" };
   for(const x of t){
+    const ph = tripPhase(x);
+    const transit = ph === "transit";
+    const shown = transit ? (x.arrival || x.departure) : x.departure;
     const r = el("div","row box");
     r.append(el("div",null, MICON[x.mode] || "🚆"));
     const m = el("div","main");
     m.append(el("div","t",x.title));
-    m.append(el("div","s", x.departure ? countdown(x.departure) : ("billet reçu "+relday(x.receivedAt))));
+    m.append(el("div","s",
+      transit ? (x.arrival ? "arrivée "+countdown(x.arrival) : "en cours")
+      : x.departure ? countdown(x.departure)
+      : "billet reçu "+relday(x.receivedAt)));
     r.append(m);
-    if(x.departure){
+    if(shown){
       const rr = el("div","r");
-      rr.append(el("div","t num", hm(x.departure)), el("div","s", relday(x.departure)));
+      rr.append(el("div","t num", hm(shown)), el("div","s", transit ? "arrivée" : relday(shown)));
       r.append(rr);
-      if(x.mapsURL){ const a=el("a",null,"🗺"); a.href=x.mapsURL; a.style.cssText="font-size:15px;padding:0 4px"; r.append(a); }
+      if(!transit && x.mapsURL){ const a=el("a",null,"🗺"); a.href=x.mapsURL; a.style.cssText="font-size:15px;padding:0 4px"; r.append(a); }
     }
     b.append(r);
   }
