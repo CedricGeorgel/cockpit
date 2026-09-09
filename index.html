@@ -506,12 +506,6 @@ function finalize(c, kind){
     c.classList.add("collapsed");
     const note = collapseNote(kind);
     if(note){ const s=el("span","cnote",note); h.insertBefore(s, h.children[2]||null); }
-    if(kind === "todos"){
-      const plus = el("button","cplus","+");
-      plus.style.cssText = "margin-left:auto;color:var(--accent);font-weight:700;font-size:15px;padding:0 4px";
-      plus.onclick = e => { e.stopPropagation(); expanded.add(kind); collapsedM.delete(kind); persistCollapse(); render(); };
-      h.append(plus);
-    }
   }
   h.append(el("span","cchev", col ? "▾" : "▴"));
   h.style.cursor = "pointer";
