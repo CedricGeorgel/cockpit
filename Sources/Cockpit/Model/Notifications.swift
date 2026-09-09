@@ -10,4 +10,7 @@ extension Notification.Name {
 
     /// Postée quand un réglage local synchronisable a changé (à pousser vers le relais).
     static let cockpitLocalSettingChanged = Notification.Name("cockpit.setting.changed")
+
+    /// Demande d'ouvrir la feuille de connexion (compte / sync mobile).
+    static let cockpitOpenConnect = Notification.Name("cockpit.open.connect")
 }

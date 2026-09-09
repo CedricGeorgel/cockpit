@@ -133,6 +133,7 @@ final class RemoteBridge {
         let d = UserDefaults.standard
         d.set(u, forKey: urlKey); d.set(i, forKey: instanceKey); d.set(t, forKey: tokenKey)
         d.removeObject(forKey: appliedKey)
+        d.set(false, forKey: "cockpit.localMode")
         restart()
         return true
     }
@@ -184,6 +185,7 @@ final class RemoteBridge {
             d.removeObject(forKey: self.instanceKey)
             d.set(pairs["e"] ?? "", forKey: self.emailKey)
             d.removeObject(forKey: self.appliedKey)
+            d.set(false, forKey: "cockpit.localMode")
             self.restart()
             completion(.success(pairs["e"] ?? ""))
         }
@@ -201,6 +203,7 @@ final class RemoteBridge {
         let tok = token, relay = relayURLString
         let d = UserDefaults.standard
         [tokenKey, instanceKey, emailKey, appliedKey].forEach(d.removeObject(forKey:))
+        d.set(true, forKey: "cockpit.localMode")   // on reste utilisable en local, pas d'écran de connexion
         [snapshotTimer, commandTimer, settingsTimer].forEach { $0?.invalidate() }
         started = false
         NotificationCenter.default.post(name: .cockpitFleetUpdated, object: nil)

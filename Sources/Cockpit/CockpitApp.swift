@@ -80,13 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 }
 
-/// Barrière de connexion : pas de compte relié → écran de connexion, rien ne
-/// tourne. Le jeton de session (`cockpit.remote.token`) fait la bascule.
+/// Au premier lancement : choisir entre « ce Mac uniquement » (mode local) et se
+/// connecter (sync mobile + flotte). Le jeton de session OU le mode local
+/// débloque le tableau de bord.
 struct RootView: View {
     @AppStorage("cockpit.remote.token") private var token = ""
+    @AppStorage("cockpit.localMode") private var localMode = false
 
     var body: some View {
-        if token.isEmpty {
+        if token.isEmpty && !localMode {
             SignInView()
         } else {
             DashboardView()

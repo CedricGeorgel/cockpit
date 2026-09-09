@@ -317,6 +317,19 @@ struct TopBar: View {
                 .font(.ui(12))
                 .foregroundStyle(Theme.textDim)
 
+            if RemoteBridge.shared.token.isEmpty {
+                Button {
+                    NotificationCenter.default.post(name: .cockpitOpenConnect, object: nil)
+                } label: {
+                    Label("local", systemImage: "wifi.slash")
+                        .font(.ui(9.5, .medium)).foregroundStyle(Theme.textFaint)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                }
+                .buttonStyle(.plain)
+                .help("Ce Mac uniquement, sans synchro. Cliquer pour se connecter.")
+            }
+
             Spacer(minLength: 12)
 
             if canvas.editing {
@@ -369,6 +382,7 @@ struct TopBar: View {
             .buttonStyle(GhostButtonStyle(prominent: canvas.editing))
         }
         .sheet(isPresented: $showMobile) { MobileSyncSheet() }
+        .onReceive(NotificationCenter.default.publisher(for: .cockpitOpenConnect)) { _ in showMobile = true }
         .padding(.horizontal, 16)
         .padding(.leading, 62)
         .padding(.vertical, 9)
