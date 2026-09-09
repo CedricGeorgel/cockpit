@@ -184,6 +184,40 @@ Résultat : la PWA affiche un bandeau « Nouvelle version », l'app Mac affiche
 
 ---
 
+## Partie E — Déploiement automatique (à chaque push)
+
+Le dépôt contient déjà `.github/workflows/deploy.yml` : à chaque push sur `main`,
+GitHub appelle `deploy.php` sur OVH. Il te reste **un seul réglage** :
+
+1. github.com/CedricGeorgel/cockpit → **Settings** → **Secrets and variables** →
+   **Actions** → **New repository secret**.
+2. Name : `DEPLOY_KEY`
+   Secret : `d167f6b0e9451c650c9d76e130707f7ac547bc4f70c759d9`
+   (la valeur de `$KEY` dans `init.php`) → **Add secret**.
+3. Onglet **Actions** du dépôt : le prochain `git push` lance « Déploiement ».
+   La 1re exécution avant l'ajout du secret échoue, c'est normal — relance-la
+   (**Re-run jobs**) une fois le secret en place.
+
+Ensuite ton cycle se réduit à :
+
+```bash
+./package.sh "ce que j'ai changé"
+git add -A && git commit -m "…" && git push
+```
+
+…et le site est à jour ~15 s plus tard. (Le DMG, lui, reste à téléverser en FTP
+quand tu bumpes `VERSION`.)
+
+### Variante sans Actions : webhook GitHub
+
+Si tu préfères zéro YAML : dépôt → **Settings** → **Webhooks** → **Add webhook** →
+Payload URL =
+`https://dashboard.caadesign.fr/deploy.php?key=d167f6b0e9451c650c9d76e130707f7ac547bc4f70c759d9`,
+Content type `application/json`, événement **Just the push event**. Même effet.
+(La clé est alors visible dans la config du webhook plutôt que dans un secret.)
+
+---
+
 ## Sécurité — rappels
 
 - Le token vit dans `DOCROOT/.git/config`, bloqué par `.htaccess`. Si tu veux le

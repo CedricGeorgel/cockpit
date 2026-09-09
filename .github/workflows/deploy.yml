@@ -1,0 +1,31 @@
+name: Déploiement
+
+# Chaque push sur main déclenche un appel à deploy.php sur le serveur OVH,
+# qui fait « git fetch + reset --hard ». La clé est dans le secret DEPLOY_KEY
+# (Settings → Secrets and variables → Actions).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}        # bouton « Run workflow » pour forcer à la main
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déclencher deploy.php
+        run: |
+          if [ -z "${{ secrets.DEPLOY_KEY }}" ]; then
+            echo "::error::Secret DEPLOY_KEY absent — ajoute-le dans Settings → Secrets → Actions."
+            exit 1
+          fi
+          code=$(curl -sS --max-time 60 -o response.txt -w '%{http_code}' \
+            "https://dashboard.caadesign.fr/deploy.php?key=${{ secrets.DEPLOY_KEY }}")
+          echo "----- réponse du serveur (HTTP $code) -----"
+          cat response.txt
+          echo
+          test "$code" = "200"
