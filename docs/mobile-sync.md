@@ -19,11 +19,13 @@ compte = l'identifiant Google. Un proche qui se connecte avec *son* Google a
  GET  ?f=commands   ◀──── data/acct/<id>/commands.json  ◀─POST ?f=commands── cocher / +
 ```
 
-Tout le déployable est dans **`web/`** (PWA + `relay.php` + `.htaccess`). Deux
-façons de le mettre en ligne, **aucun SSH requis** :
+**Le dépôt Git EST le docroot.** `index.html`, `relay.php`, `deploy.php` sont à la
+racine du repo ; l'app macOS (`Sources/`, `build.sh`…) est dans le même dossier
+mais masquée par `.htaccess`. Deux façons de mettre en ligne, **sans SSH** :
 - **FTP** : dézippe `cockpit-deploy.zip` dans le docroot (premier déploiement).
-- **Git** : `init.php` une fois, puis `deploy.php?key=…` à chaque mise à jour
-  (voir « Déploiement Git » plus bas). Recommandé si tu itères souvent.
+- **Git** : `init.php` une fois, puis `deploy.php?key=…` (voir plus bas).
+
+Guide pas à pas complet : `docs/deploy-guide.md`.
 
 ## 1. Créer l'app Google (~10 min, une fois)
 
@@ -58,42 +60,19 @@ identifiants :
 `signup_code` / `max_instances` ne concernent que l'ancienne création d'instance
 par clé (rétro-compat), sans effet sur la connexion Google.
 
-## 3. Mettre en ligne le contenu de `web/`
+## 3. Mettre en ligne
 
-Dans un sous-domaine servi en **HTTPS**, le docroot doit contenir :
+Le docroot du sous-domaine (servi en **HTTPS**) reçoit le contenu du dépôt.
+Fichiers servis : `index.html`, `relay.php`, `sw.js`, `manifest.webmanifest`,
+`version.json`, `icons/`, `deploy.php`. Non versionnés mais présents :
+`config.php` (étape 2), `Cockpit.dmg` (téléversé à la main), `data/` (créé au
+runtime, `chmod 755`). `.htaccess` masque `.git`, `Sources/`, `*.swift`, etc.
 
-```
-docroot/
-├── index.html  relay.php  sw.js  manifest.webmanifest  version.json
-├── Cockpit.dmg           (le DMG, pour la landing ; téléversé à la main)
-├── config.php            (créé à l'étape 2, jamais dans Git)
-├── .htaccess   icons/
-└── data/  └── .htaccess  (bloque l'accès direct aux JSON ; data/ inscriptible, chmod 755)
-```
+L'URI de redirection Google doit pointer **exactement** sur
+`https://TON-DOMAINE/relay.php`.
 
-`index.html` et `relay.php` **dans le même dossier**. L'URI de redirection Google
-doit pointer **exactement** sur `relay.php` (`https://TON-DOMAINE/relay.php`).
-
-### Déploiement Git (mises à jour rapides)
-
-Dépôt privé + `deploy.php` (pas de webhook OVH nécessaire) :
-
-1. Repo GitHub privé `cockpit`. Crée un **fine-grained PAT** en lecture seule sur
-   ce dépôt.
-2. Sur le serveur, crée `~/cockpit/web/`, règle le docroot du sous-domaine sur
-   `~/cockpit/web`.
-3. Édite `web/init.php` (les 4 constantes : `$REPO` avec le token, `$KEY`
-   aléatoire, `$SUBDIR='web'`), téléverse-le dans `~/cockpit/web/`, ouvre
-   `https://TON-DOMAINE/init.php?go=LA_CLE`. Ça `git init` `~/cockpit`, récupère
-   `main`, écrit `deploy.config.php`. **Supprime `init.php`** ensuite.
-4. Crée `config.php` (clés Google) dans `~/cockpit/web/`.
-5. Mises à jour suivantes : `https://TON-DOMAINE/deploy.php?key=LA_CLE` (à la
-   main, ou depuis un GitHub Action après merge). `config.php`, `data/`,
-   `Cockpit.dmg` sont ignorés par Git et survivent au `reset --hard`.
-
-Le token vit dans `~/cockpit/.git/config`, **hors** du docroot. Pour publier une
-nouvelle version : bump `VERSION` dans `build.sh`, `./package.sh "notes"`,
-téléverse le nouveau `Cockpit.dmg`, commite `web/version.json`, `deploy.php`.
+**Détail complet du déploiement Git (init.php / deploy.php / PAT) :
+`docs/deploy-guide.md`.**
 
 ## 4. Vérifier
 
@@ -124,9 +103,9 @@ identifiant Google. Vos données ne se croisent jamais.
 
 ### Mises à jour
 
-Ré-envoie `web/` (et `relay.php` s'il change) par FTP. Ne touche pas à
-`config.php` ni à `data/`. `sw.js` est en *réseau d'abord* : la nouvelle version
-est prise au chargement suivant.
+`https://TON-DOMAINE/deploy.php?key=LA_CLE` (ou ré-envoi FTP). `config.php`,
+`data/`, `Cockpit.dmg` sont git-ignorés et survivent. `sw.js` est en *réseau
+d'abord* : la nouvelle PWA est prise au chargement suivant.
 
 Ménage automatique : `dev.*.json` inactif > 30 j supprimé ; compte sans appareil
 et inactif > 60 j supprimé ; session Google inactive > 90 j supprimée ; `state`

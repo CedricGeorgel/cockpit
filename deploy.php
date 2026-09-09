@@ -26,8 +26,8 @@ if ($key === '' || !hash_equals($key, (string) ($_GET['key'] ?? ''))) {
     exit("Forbidden\n");
 }
 
-/** Racine du dépôt : un cran au-dessus si web/ est le docroot, sinon ici. */
-$root = is_dir(dirname(__DIR__) . '/.git') ? dirname(__DIR__) : __DIR__;
+/** Le dépôt EST le docroot (deploy.php à la racine). */
+$root = __DIR__;
 if (!is_dir("$root/.git")) {
     http_response_code(409);
     exit("Dépôt Git introuvable. Relance init.php.\n");

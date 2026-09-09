@@ -1,4 +1,4 @@
-# Cockpit relay (à déposer dans le même dossier que relay.php et index.html).
+# Cockpit — le docroit est le dépôt Git (index.html, relay.php, deploy.php à la racine).
 
 # 1. Transmettre l'en-tête Authorization à PHP (souvent absente en CGI/FPM mutualisé).
 <IfModule mod_rewrite.c>
@@ -18,13 +18,11 @@ SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
 # 3. index.html sert de page par défaut du dossier.
 DirectoryIndex index.html index.php
 
-# 4. Ne jamais servir le dépôt Git, les sources Swift ni les configs
-#    (défense en profondeur : normalement .git est hors du docroot).
-RedirectMatch 404 /\.git
-<FilesMatch "(^config\.php$|^deploy\.config\.php$|^init\.php$|\.(swift|sh|md)$|^Package\.(swift|resolved)$)">
+# 4. Le dépôt et l'app macOS vivent dans le même dossier que le site :
+#    on masque tout ce qui n'est pas la PWA / le relais.
+RedirectMatch 404 (?i)/\.git
+RedirectMatch 404 (?i)^/(Sources|tools|icon|docs|\.build|Cockpit\.app)(/|$)
+<FilesMatch "(?i)(^config\.php$|^deploy\.config\.php$|^init\.php$|\.(swift|sh|resolved)$|^Package\.swift$|^\.git)">
     <IfModule mod_authz_core.c>Require all denied</IfModule>
     <IfModule !mod_authz_core.c>Deny from all</IfModule>
 </FilesMatch>
-<IfModule mod_alias.c>
-    RedirectMatch 404 ^/(Sources|tools|icon|docs|\.build)(/|$)
-</IfModule>
