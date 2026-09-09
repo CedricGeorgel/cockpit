@@ -12,6 +12,8 @@ struct TodoItem: Identifiable {
 final class TodosModel: ObservableObject {
     @Published var items: [TodoItem] = []
     @Published var granted = false
+    /// Confirmation éphémère quand un rappel est créé pour un autre jour.
+    @Published var lastAdded: String?
 
     private let store = EKEventStore()
 
@@ -57,15 +59,31 @@ final class TodosModel: ObservableObject {
         reload()
     }
 
-    /// Ajoute un rappel, échéance aujourd'hui, dans la liste par défaut.
+    /// Ajoute un rappel. Comprend le langage naturel : « demain 9h appeler Paul »,
+    /// « payer le loyer lundi », « dans 2h relancer »… Sinon échéance aujourd'hui.
     func addReminder(_ title: String) {
-        let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard granted, !text.isEmpty, let calendar = store.defaultCalendarForNewReminders() else { return }
+        let raw = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard granted, !raw.isEmpty, let calendar = store.defaultCalendarForNewReminders() else { return }
+        let p = DatePhrase.parse(raw)
+        let cal = Calendar.current
         let r = EKReminder(eventStore: store)
-        r.title = text
+        r.title = p.title
         r.calendar = calendar
-        r.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let due = p.due ?? Date()
+        r.dueDateComponents = p.timed
+            ? cal.dateComponents([.year, .month, .day, .hour, .minute], from: due)
+            : cal.dateComponents([.year, .month, .day], from: due)
+        if p.timed {
+            r.addAlarm(EKAlarm(absoluteDate: due))
+        }
         try? store.save(r, commit: true)
+
+        if let d = p.due, !Calendar.current.isDateInToday(d) {
+            let f = DateFormatter(); f.locale = Locale(identifier: "fr_FR")
+            f.dateFormat = p.timed ? "EEEE d MMM 'à' HH'h'mm" : "EEEE d MMM"
+            lastAdded = "→ \(f.string(from: d))"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.lastAdded = nil }
+        }
         reload()
     }
 
@@ -89,6 +107,10 @@ struct TodosModule: View {
                                  action: ("Ouvrir les réglages", { model.openSettings() }))
                 } else {
                     quickAdd
+                    if let a = model.lastAdded {
+                        Text(a).font(.ui(9.5, .medium)).foregroundStyle(Theme.accent)
+                            .transition(.opacity)
+                    }
                     if model.items.isEmpty {
                         Text("Rien à faire aujourd'hui")
                             .font(.ui(11)).foregroundStyle(Theme.textFaint)
@@ -108,7 +130,7 @@ struct TodosModule: View {
     private var quickAdd: some View {
         HStack(spacing: 6) {
             Image(systemName: "plus.circle").font(.system(size: 12)).foregroundStyle(Theme.textFaint)
-            TextField("Ajouter un rappel pour aujourd'hui…", text: $newReminder)
+            TextField("Rappel… (« demain 9h », « lundi »)", text: $newReminder)
                 .textFieldStyle(.plain).font(.ui(12))
                 .focused($addFocused)
                 .onSubmit(submit)

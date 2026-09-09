@@ -51,6 +51,7 @@ struct DashboardSnapshot: Codable {
         var aqi: Int?
         var aqiLabel: String?
         var pollen: String?
+        var advice: String?
     }
 
     struct Agenda: Codable, Identifiable {
@@ -164,7 +165,8 @@ enum SnapshotBuilder {
                 text: wmoText(w.code), symbol: wmoIcon(w.code),
                 humidity: w.humidity, wind: Int(w.wind.rounded()), precipProb: w.precipProb,
                 aqi: w.aqi, aqiLabel: w.aqi.map(aqiLabel),
-                pollen: w.topPollen.map { "\($0.name) \(pollenLabel($0.value))" })
+                pollen: w.topPollen.map { "\($0.name) \(pollenLabel($0.value))" },
+                advice: w.advice)
         }
 
         // Agenda

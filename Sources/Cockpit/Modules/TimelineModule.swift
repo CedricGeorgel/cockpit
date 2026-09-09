@@ -7,10 +7,11 @@ struct TimelineModule: View {
     @ObservedObject var calendar: CalendarModel
     @ObservedObject var todos: TodosModel
     @ObservedObject var mail: MailModel
+    @ObservedObject var birthdays: BirthdaysModel
     @State private var now = Date()
     private let tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
-    enum Kind { case event, trip, reminder, leave }
+    enum Kind { case event, trip, reminder, leave, birthday }
 
     struct Entry: Identifiable {
         let id: String
@@ -24,9 +25,15 @@ struct TimelineModule: View {
     }
 
     static func entries(_ cal: CalendarModel, _ todos: TodosModel, _ mail: MailModel,
-                        now: Date = Date()) -> [Entry] {
+                        _ birthdays: BirthdaysModel, now: Date = Date()) -> [Entry] {
         let c = Calendar.current
         var out: [Entry] = []
+
+        for b in birthdays.upcoming where b.isToday {
+            out.append(Entry(id: "bday-\(b.id)", at: b.date, kind: .birthday,
+                             title: "Anniversaire · \(b.name)",
+                             sub: b.turning.map { "\($0) ans" }))
+        }
 
         for e in cal.events {
             guard let s = e.start, !e.allDay, c.isDateInToday(s) else { continue }
@@ -68,11 +75,16 @@ struct TimelineModule: View {
         return out.sorted { $0.at < $1.at }
     }
 
-    private var entries: [Entry] { Self.entries(calendar, todos, mail, now: now) }
+    private var entries: [Entry] { Self.entries(calendar, todos, mail, birthdays, now: now) }
+
+    /// Le prochain anniversaire à venir (pas aujourd'hui), pour un aperçu discret.
+    private var nextBirthday: Birthday? {
+        birthdays.upcoming.first { !$0.isToday && $0.inDays <= 10 }
+    }
 
     var body: some View {
         ModuleBody {
-            if entries.isEmpty {
+            if entries.isEmpty && nextBirthday == nil {
                 ModuleNotice(icon: "calendar.day.timeline.left", title: "Rien de prévu aujourd'hui")
             } else {
                 ScrollView {
@@ -84,6 +96,19 @@ struct TimelineModule: View {
                             row(e)
                         }
                         if let last = entries.last, last.at <= now { nowMarker }
+                        if entries.isEmpty {
+                            Text("Rien de prévu aujourd'hui")
+                                .font(.ui(10.5)).foregroundStyle(Theme.textFaint).padding(.vertical, 4)
+                        }
+                        if let b = nextBirthday {
+                            Divider().overlay(Theme.hairline).padding(.vertical, 4)
+                            HStack(spacing: 6) {
+                                Image(systemName: "gift.fill").font(.system(size: 9)).foregroundStyle(Theme.info)
+                                Text("Anniv \(b.name) \(b.inDays == 1 ? "demain" : "dans \(b.inDays) j")"
+                                     + (b.turning.map { " (\($0) ans)" } ?? ""))
+                                    .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                            }
+                        }
                     }
                     .padding(.vertical, 2)
                 }
@@ -144,6 +169,7 @@ struct TimelineModule: View {
         case .trip:     return "tram.fill"
         case .reminder: return "checklist"
         case .leave:    return "figure.walk.departure"
+        case .birthday: return "gift.fill"
         }
     }
     private func color(_ k: Kind) -> Color {
@@ -152,6 +178,7 @@ struct TimelineModule: View {
         case .trip:     return Theme.accent
         case .reminder: return Theme.textDim
         case .leave:    return Theme.warn
+        case .birthday: return Theme.info
         }
     }
 }

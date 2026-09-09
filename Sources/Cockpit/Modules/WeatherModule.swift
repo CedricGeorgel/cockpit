@@ -13,6 +13,7 @@ struct WeatherSnapshot {
     var aqi: Int?
     var pm25: Double?
     var topPollen: (name: String, value: Double)?
+    var advice: String? = nil   // « prends un parapluie vers 17 h », « couvre-toi »…
 }
 
 final class WeatherModel: ObservableObject {
@@ -95,9 +96,10 @@ final class WeatherModel: ObservableObject {
             .init(name: "latitude", value: String(lat)),
             .init(name: "longitude", value: String(lon)),
             .init(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m"),
+            .init(name: "hourly", value: "temperature_2m,apparent_temperature,precipitation_probability,weather_code"),
             .init(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max"),
             .init(name: "timezone", value: "auto"),
-            .init(name: "forecast_days", value: "1"),
+            .init(name: "forecast_days", value: "2"),
         ]
         let (data, _) = try await URLSession.shared.data(from: c.url!)
         struct R: Decodable {
@@ -108,15 +110,49 @@ final class WeatherModel: ObservableObject {
                 let weather_code: Int
                 let wind_speed_10m: Double
             }
+            struct Hourly: Decodable {
+                let time: [String]
+                let temperature_2m: [Double]
+                let apparent_temperature: [Double]
+                let precipitation_probability: [Int?]
+                let weather_code: [Int]
+            }
             struct Day: Decodable {
                 let temperature_2m_max: [Double]
                 let temperature_2m_min: [Double]
                 let precipitation_probability_max: [Int?]
             }
             let current: Cur
+            let hourly: Hourly
             let daily: Day
         }
         let r = try JSONDecoder().decode(R.self, from: data)
+
+        // --- conseil concret pour les prochaines heures ---
+        var advice: String?
+        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd'T'HH:mm"; fmt.timeZone = .current
+        let now = Date()
+        let idx = r.hourly.time.enumerated().first { (fmt.date(from: $0.element) ?? .distantPast) >= now }?.offset ?? 0
+        let window = idx..<min(idx + 8, r.hourly.time.count)
+        if !window.isEmpty {
+            let rainH = window.first { (r.hourly.precipitation_probability[$0] ?? 0) >= 55 }
+            let minFeel = window.map { r.hourly.apparent_temperature[$0] }.min() ?? r.current.apparent_temperature
+            let maxFeel = window.map { r.hourly.apparent_temperature[$0] }.max() ?? r.current.apparent_temperature
+            if let ri = rainH {
+                let h = String(r.hourly.time[ri].suffix(5))   // "HH:mm"
+                advice = ri == idx ? "pluie en approche, prends un parapluie"
+                    : "prends un parapluie, pluie vers \(h)"
+            } else if minFeel <= 3 {
+                advice = "couvre-toi bien, ressenti \(Int(minFeel.rounded()))°"
+            } else if minFeel <= 10 {
+                advice = "prends une veste, ça se rafraîchit"
+            } else if maxFeel >= 30 {
+                advice = "grosse chaleur, pense à t'hydrater"
+            } else if r.current.wind_speed_10m >= 40 {
+                advice = "vent fort aujourd'hui"
+            }
+        }
+
         return WeatherSnapshot(
             place: "", temp: r.current.temperature_2m, feels: r.current.apparent_temperature,
             code: r.current.weather_code, humidity: Int(r.current.relative_humidity_2m.rounded()),
@@ -124,7 +160,7 @@ final class WeatherModel: ObservableObject {
             tempMax: r.daily.temperature_2m_max.first ?? r.current.temperature_2m,
             tempMin: r.daily.temperature_2m_min.first ?? r.current.temperature_2m,
             precipProb: r.daily.precipitation_probability_max.first.flatMap { $0 } ?? 0,
-            aqi: nil, pm25: nil, topPollen: nil)
+            aqi: nil, pm25: nil, topPollen: nil, advice: advice)
     }
 
     private struct AirResult { let aqi: Int?; let pm25: Double?; let topPollen: (name: String, value: Double)? }
@@ -177,6 +213,11 @@ struct WeatherModule: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let s = model.snapshot {
                     header(s)
+                    if let a = s.advice {
+                        Label(a, systemImage: adviceIcon(a))
+                            .font(.ui(10.5, .medium)).foregroundStyle(Theme.info)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
                     if let e = model.error {
                         Label(e, systemImage: "exclamationmark.triangle.fill")
                             .font(.ui(10)).foregroundStyle(Theme.warn)
@@ -197,6 +238,14 @@ struct WeatherModule: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private func adviceIcon(_ a: String) -> String {
+        if a.contains("parapluie") || a.contains("pluie") { return "umbrella.fill" }
+        if a.contains("couvre") || a.contains("veste") || a.contains("rafraîchit") { return "thermometer.snowflake" }
+        if a.contains("chaleur") || a.contains("hydrater") { return "thermometer.sun.fill" }
+        if a.contains("vent") { return "wind" }
+        return "lightbulb.fill"
     }
 
     private func header(_ s: WeatherSnapshot) -> some View {

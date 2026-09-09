@@ -33,6 +33,7 @@ struct DashboardView: View {
                     UpdateBanner(update: up).id("\(up.kind.rawValue)-\(up.version)")
                 }
                 canvasArea
+                DashboardFooter()
             }
         }
         .frame(minWidth: 940, minHeight: 640)
@@ -108,7 +109,7 @@ struct DashboardView: View {
         case .todos:      return todos.items.isEmpty
         case .scratchpad: return scratchEmpty
         case .news:       return news.allRead || news.nothingFresh
-        case .timeline:   return TimelineModule.entries(calendar, todos, mail).isEmpty
+        case .timeline:   return TimelineModule.entries(calendar, todos, mail, Services.shared.birthdays).isEmpty
         default:          return false
         }
     }
@@ -254,6 +255,34 @@ struct DashboardView: View {
         list.insert(dragged, at: idx)
         let heights = m.cardHeights(list.map { canvas.weight($0) })
         return m.cardRect(col: d.col, index: idx, heights: heights)
+    }
+}
+
+/// Bande fine en bas : version, état de connexion. Sert aussi au support.
+struct DashboardFooter: View {
+    @AppStorage("cockpit.remote.email") private var email = ""
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    }
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("Cockpit \(version)")
+            if !email.isEmpty {
+                Text("·").opacity(0.5)
+                Text(email)
+            } else {
+                Text("·").opacity(0.5)
+                Text("local")
+            }
+            Spacer()
+        }
+        .font(.ui(9))
+        .foregroundStyle(Theme.textFaint)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(Theme.bgElevated.opacity(0.5))
+        .overlay(alignment: .top) { Rectangle().fill(Theme.hairline).frame(height: 1) }
     }
 }
 
@@ -416,7 +445,7 @@ struct ModuleHost: View {
     var body: some View {
         switch kind {
         case .disk:       DiskModule(model: services.disk)
-        case .timeline:   TimelineModule(calendar: services.calendar, todos: services.todos, mail: services.mail)
+        case .timeline:   TimelineModule(calendar: services.calendar, todos: services.todos, mail: services.mail, birthdays: services.birthdays)
         case .calendar:   CalendarModule(model: services.calendar)
         case .weather:    WeatherModule(model: services.weather)
         case .scratchpad: ScratchpadModule()

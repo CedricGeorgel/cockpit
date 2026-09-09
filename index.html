@@ -129,6 +129,7 @@
 
   .pending{font-size:9px;color:var(--warn);margin-left:6px}
   .muted{color:var(--faint);font-size:11px;text-align:center;padding:14px}
+  #ver{text-align:center;font-size:9.5px;color:var(--faint);padding:6px 0 2px}
   .updbar{position:sticky;top:0;z-index:30;background:var(--accent);color:var(--onAccent);
     font-size:12px;font-weight:600;text-align:center;padding:9px 12px;cursor:pointer}
 
@@ -169,6 +170,7 @@
 </header>
 
 <main id="app"><p class="muted">Chargement…</p></main>
+<footer id="ver"></footer>
 
 <section id="setup">
   <h2>Cockpit</h2>
@@ -245,7 +247,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.10";
+const COCKPIT_VERSION = "0.11";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -601,6 +603,11 @@ function weatherCard(){
     el("div","t",w.text));
   if(w.place) info.append(el("div","s","📍 "+w.place));
   top.append(info); b.append(top);
+  if(w.advice){
+    const ad = el("div","s"); ad.textContent = "💡 "+w.advice;
+    ad.style.cssText = "white-space:normal;color:var(--info);font-weight:500;margin-top:4px";
+    b.append(ad);
+  }
 
   const acc = el("button","w-acc");
   const summary = [`${w.humidity}% hum.`,`${w.wind} km/h`,`pluie ${w.precipProb}%`];
@@ -661,7 +668,7 @@ function todosCard(){
   const items = snap.todos||[];
   const { card:c, body:b } = card("À faire","✓");
   const add = el("div","add");
-  const inp = el("input"); inp.placeholder = "Ajouter un rappel…"; inp.enterKeyHint = "done";
+  const inp = el("input"); inp.placeholder = "Rappel… (« demain 9h »)"; inp.enterKeyHint = "done";
   inp.onkeydown = e=>{ if(e.key==="Enter"){ const t=inp.value.trim(); if(t){ sendCommand("addReminder",{title:t},"rappel"); inp.value=""; } } };
   add.append(inp); b.append(add);
 
@@ -907,6 +914,8 @@ function startLoop(){
   timer = setInterval(refresh, 60000);
 }
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden){ refresh(); checkUpdate(); } });
+
+$("#ver").textContent = "Cockpit " + COCKPIT_VERSION + (cfg.email ? " · " + cfg.email : "");
 
 if(snap) render();
 if(isConfigured()) startLoop(); else openSetup();

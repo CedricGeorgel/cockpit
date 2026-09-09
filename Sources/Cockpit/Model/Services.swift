@@ -15,6 +15,7 @@ final class Services: ObservableObject {
     let mail = MailModel()
     let battery = BatteryModel()
     let parcels = ParcelsModel()
+    let birthdays = BirthdaysModel()
 
     private var started = false
 
@@ -35,6 +36,7 @@ final class Services: ObservableObject {
         mail.start()
         battery.start()
         parcels.start()
+        birthdays.start()
 
         CockpitStatus.shared.start()
 
