@@ -25,7 +25,7 @@ struct DashboardView: View {
             AppBackground()
             VStack(spacing: 0) {
                 TopBar(canvas: canvas, theme: $theme)
-                if let up = update.available { UpdateBanner(update: up) }
+                if let up = update.available { UpdateBanner(update: up).id(up.version) }
                 canvasArea
             }
         }

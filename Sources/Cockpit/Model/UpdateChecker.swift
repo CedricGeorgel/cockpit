@@ -23,14 +23,30 @@ final class UpdateChecker: ObservableObject {
     }
 
     private var timer: Timer?
+    private var lastCheck = Date.distantPast
+    private var started = false
 
     private init() {}
 
     func start() {
-        check()
-        timer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
-            self?.check()
-        }
+        guard !started else { return }
+        started = true
+        check(force: true)
+
+        // Vérif périodique (l'app tourne souvent en fond : on veut la voir arriver
+        // sans relancer). 15 min, c'est ~100 octets de texte.
+        let t = Timer(timeInterval: 900, repeats: true) { [weak self] _ in self?.check() }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
+
+        // …et sur les évènements qui « réveillent » l'app.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.check() }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.check(force: true) }
     }
 
     /// URL de `version.json` : dérivée de l'adresse du relais, sinon le feed canonique.
@@ -46,7 +62,10 @@ final class UpdateChecker: ObservableObject {
         return URL(string: joined)
     }
 
-    func check() {
+    func check(force: Bool = false) {
+        // Anti-rafale : au plus une requête par minute (sauf réveil / lancement).
+        if !force && Date().timeIntervalSince(lastCheck) < 60 { return }
+        lastCheck = Date()
         guard let url = feedURL else { return }
         var req = URLRequest(url: url)
         req.cachePolicy = .reloadIgnoringLocalCacheData
@@ -57,7 +76,9 @@ final class UpdateChecker: ObservableObject {
                   let remote = obj["version"] as? String
             else { return }
             let newer = Self.isNewer(remote, than: self.current)
-            let link = (obj["url"] as? String).flatMap(URL.init(string:))
+            // `url` peut être relatif ("Cockpit.dmg") : on le résout contre le feed.
+            let raw = (obj["url"] as? String) ?? "Cockpit.dmg"
+            let link = URL(string: raw, relativeTo: url)?.absoluteURL
                 ?? URL(string: self.fallbackBase)!
             let notes = obj["notes"] as? String ?? ""
             DispatchQueue.main.async {
