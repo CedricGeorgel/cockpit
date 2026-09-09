@@ -101,8 +101,24 @@ struct DiskModule: View {
                     }
                 }
                 Spacer(minLength: 0)
+                prismeButton
             }
         }
+    }
+
+    @ViewBuilder private var prismeButton: some View {
+        let installed = PrismeAPI.isAvailable
+        Button {
+            if installed { PrismeAPI.openApp() }
+            else { NSWorkspace.shared.open(PrismeAPI.siteURL) }
+        } label: {
+            Label(installed ? "Analyser avec Prisme" : "Installer Prisme",
+                  systemImage: installed ? "chart.pie.fill" : "arrow.down.circle")
+                .font(.ui(10.5, .medium))
+                .foregroundStyle(Theme.info)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 2)
     }
 
     private func diskBar(_ name: String, _ used: Int64, _ total: Int64, _ free: Int64,

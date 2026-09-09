@@ -1,7 +1,7 @@
 // Service worker : coquille hors-ligne. Les appels API (relay.php) ne sont
 // JAMAIS mis en cache. La navigation est "réseau d'abord" pour récupérer
 // les mises à jour de la PWA immédiatement.
-const CACHE = "cockpit-shell-v4";
+const CACHE = "cockpit-shell-v5";
 const SHELL = ["./", "index.html", "manifest.webmanifest",
                "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 
@@ -20,7 +20,8 @@ self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;                 // POST relay.php → réseau direct
   if (url.searchParams.has("f")) return;                   // GET relay.php?f=… → réseau direct
   if (url.searchParams.has("auth")) return;                // flux Google → réseau direct
-  if (url.pathname.endsWith("/version.json")) return;      // vérif de version → réseau direct
+  if (url.pathname.endsWith("version.json")) return;       // vérif de version (cockpit + prisme) → réseau direct
+  if (url.pathname.endsWith(".dmg")) return;               // téléchargements → réseau direct
 
   // Navigation / HTML : réseau d'abord, cache en secours.
   if (e.request.mode === "navigate" || url.pathname.endsWith("index.html") || url.pathname.endsWith("/")) {

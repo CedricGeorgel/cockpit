@@ -9,10 +9,12 @@ Cockpit.app/
 Cockpit [0-9]*.app/
 
 # --- artefacts d'empaquetage (régénérés par package.sh) ---
-# Cockpit-<version>.dmg est ignoré ; Cockpit.dmg (nom stable) est versionné
-# pour que la landing le serve automatiquement après deploy.php.
+# Cockpit-<version>.dmg est ignoré ; les DMG au nom stable (Cockpit.dmg,
+# Prisme.dmg) sont versionnés pour que la landing les serve après deploy.php.
+# (pas de commentaire en fin de ligne : ça casse la négation gitignore)
 *.dmg
 !Cockpit.dmg
+!Prisme.dmg
 cockpit-deploy.zip
 
 # --- serveur : secrets & données runtime (jamais committés) ---

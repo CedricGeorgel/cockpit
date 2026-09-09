@@ -154,6 +154,7 @@
   .theme-seg button.on{border-color:var(--accent);color:var(--text)}
   .landing-dl{display:block;text-align:center;background:var(--accent);color:var(--onAccent);
     padding:13px;border-radius:11px;font-weight:700;font-size:14px}
+  .landing-dl.alt{background:var(--card);color:var(--text);border:1px solid var(--line);font-size:13px}
   .landing-feat{font-size:12px;color:var(--dim);line-height:1.7}
 </style>
 </head>
@@ -175,8 +176,9 @@
   <div id="setup-create">
     <p class="hint" id="landing-pitch">Un tableau de bord personnel pour ton Mac : agenda, mails importants, colis, trajets, météo, to-do, bloc-notes, au même endroit. Cette page en est la version mobile, en lecture, synchronisée avec ton Mac.</p>
 
-    <a class="landing-dl" id="dl-mac" href="Cockpit.dmg" download>Télécharger pour Mac</a>
-    <p class="landing-feat" id="landing-how">Installe l'app, connecte-la avec Google. Reviens ici, connecte-toi avec le même compte : tu retrouves ton tableau de bord sur le téléphone. Tes données ne transitent que par ton serveur.</p>
+    <a class="landing-dl" id="dl-mac" href="Cockpit.dmg" download>Télécharger Cockpit pour Mac</a>
+    <a class="landing-dl alt" id="dl-prisme" href="Prisme.dmg" download>Télécharger Prisme (analyseur d'espace disque)</a>
+    <p class="landing-feat" id="landing-how">Installe Cockpit, connecte-le avec Google. Reviens ici, connecte-toi avec le même compte : tu retrouves ton tableau de bord sur le téléphone. Tes données ne transitent que par ton serveur.</p>
 
     <p id="setup-err" class="err"></p>
     <div class="actions">
@@ -241,7 +243,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.5";
+const COCKPIT_VERSION = "0.6";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -800,7 +802,7 @@ function openSetup(){
   showPane("setup-create");
   const who = $("#setup-who"), conf = isConfigured();
   // Éléments "landing" (pour un visiteur navigateur non connecté).
-  for(const id of ["landing-pitch","dl-mac","landing-how"]) $("#"+id).hidden = conf;
+  for(const id of ["landing-pitch","dl-mac","dl-prisme","landing-how"]) $("#"+id).hidden = conf;
   $("#setup-foot").hidden = !conf;                 // bouton "Retour au cockpit"
   $("#lnk-key").parentElement.hidden = conf;
   if(conf){

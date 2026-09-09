@@ -96,6 +96,42 @@ enum PrismeAPI {
 
     static var isAvailable: Bool { executableURL != nil }
 
+    static let bundleID = "com.prisme.diskviz"
+
+    /// Le bundle `.app` (et non l'exécutable interne).
+    static var appURL: URL? {
+        guard let exe = executableURL else { return nil }
+        return exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    /// Version installée (CFBundleShortVersionString), ou nil si absente.
+    static var installedVersion: String? {
+        guard let app = appURL,
+              let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist"))
+        else { return nil }
+        return info["CFBundleShortVersionString"] as? String
+    }
+
+    /// Ouvre Prisme (fenêtre normale). Renvoie false si l'app est introuvable.
+    @discardableResult
+    static func openApp() -> Bool {
+        guard let app = appURL else { return false }
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.activates = true
+        NSWorkspace.shared.openApplication(at: app, configuration: cfg)
+        return true
+    }
+
+    /// Landing (pour télécharger Prisme quand il n'est pas installé).
+    static var siteURL: URL {
+        let relay = RemoteBridge.shared.relayURLString
+        if let r = URL(string: relay), let host = r.host {
+            return URL(string: "\(r.scheme ?? "https")://\(host)/") ?? Self.canonicalSite
+        }
+        return Self.canonicalSite
+    }
+    private static let canonicalSite = URL(string: "https://dashboard.caadesign.fr/")!
+
     static func setCustomPath(_ appURL: URL) {
         UserDefaults.standard.set(appURL.path, forKey: customPathKey)
     }

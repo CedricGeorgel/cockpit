@@ -29,7 +29,9 @@ struct DashboardView: View {
             AppBackground()
             VStack(spacing: 0) {
                 TopBar(canvas: canvas, theme: $theme)
-                if let up = update.available { UpdateBanner(update: up).id(up.version) }
+                ForEach(update.available) { up in
+                    UpdateBanner(update: up).id("\(up.kind.rawValue)-\(up.version)")
+                }
                 canvasArea
             }
         }
@@ -258,18 +260,20 @@ struct UpdateBanner: View {
     @ObservedObject private var checker = UpdateChecker.shared
     @State private var dismissed = false
 
+    private var busy: Bool { checker.downloading.contains(update.kind) }
+
     var body: some View {
         if !dismissed {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.accent)
-                Text("Cockpit \(update.version) est disponible" + (update.notes.isEmpty ? "" : " · \(update.notes)"))
+                Text("\(update.kind.label) \(update.version) est disponible" + (update.notes.isEmpty ? "" : " · \(update.notes)"))
                     .font(.ui(11, .medium)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer(minLength: 8)
-                Button(checker.downloading ? "Téléchargement…" : "Télécharger") {
-                    UpdateChecker.shared.openDownload()
+                Button(busy ? "Téléchargement…" : "Télécharger") {
+                    UpdateChecker.shared.openDownload(update.kind)
                 }
                 .buttonStyle(GhostButtonStyle(prominent: true))
-                .disabled(checker.downloading)
+                .disabled(busy)
                 Button { dismissed = true } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textFaint)
                 }.buttonStyle(.plain)

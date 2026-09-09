@@ -35,6 +35,8 @@ PKG="$(mktemp -d)/cockpit"
 mkdir -p "$PKG/data"
 cp index.html relay.php sw.js manifest.webmanifest version.json .htaccess \
    deploy.php init.sample.php config.sample.php Cockpit.dmg "$PKG/"
+[ -f Prisme.dmg ]          && cp Prisme.dmg "$PKG/"
+[ -f prisme-version.json ] && cp prisme-version.json "$PKG/"
 cp -R icons "$PKG/"
 cp data/.htaccess "$PKG/data/"
 rm -f cockpit-deploy.zip
