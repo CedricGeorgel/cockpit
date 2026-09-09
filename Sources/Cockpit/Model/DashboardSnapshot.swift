@@ -25,6 +25,14 @@ struct DashboardSnapshot: Codable {
     var disk: Disk?
     var callTime: [Contact]
     var scratchpad: String
+    var birthdays: [Birthday] = []
+
+    struct Birthday: Codable, Identifiable {
+        var id: String
+        var name: String
+        var date: Date
+        var turning: Int?
+    }
 
     struct Trip: Codable, Identifiable {
         var id: String
@@ -252,13 +260,18 @@ enum SnapshotBuilder {
                          totalBytes: s.disk.volumeTotal, freeBytes: s.disk.volumeFree)
         }
 
+        let bdays = s.birthdays.upcoming.map {
+            DashboardSnapshot.Birthday(id: $0.id, name: $0.name, date: $0.date, turning: $0.turning)
+        }
+
         return DashboardSnapshot(
             generatedAt: Date(),
             device: Host.current().localizedName ?? "Mac",
             appliedCommandIds: appliedCommandIds,
             weather: weather, agenda: agenda, todos: todos, news: Array(news), mail: mail,
             jobs: jobs, parcels: parcels, trips: trips, battery: battery, disk: disk,
-            callTime: CallTimeStore.decode(), scratchpad: ScratchStore.load())
+            callTime: CallTimeStore.decode(), scratchpad: ScratchStore.load(),
+            birthdays: bdays)
     }
 
     private static func reasonKey(_ r: MailModel.Reason) -> String {

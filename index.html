@@ -49,8 +49,10 @@
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
-  header{position:sticky;top:0;z-index:5;background:linear-gradient(var(--bg) 70%,transparent);
-    display:flex;align-items:center;gap:10px;padding:14px 2px 10px}
+  header{position:sticky;top:0;z-index:5;
+    background:linear-gradient(var(--bg) 82%,transparent);
+    display:flex;align-items:center;gap:10px;
+    padding:calc(12px + env(safe-area-inset-top)) 2px 10px}
   header .logo{width:22px;height:22px;border-radius:6px;background:#12161d;
     display:grid;place-items:center;color:var(--accent);font-size:13px}
   header h1{font-size:15px;font-weight:600;letter-spacing:.2px}
@@ -131,10 +133,12 @@
   .muted{color:var(--faint);font-size:11px;text-align:center;padding:14px}
   #ver{text-align:center;font-size:9.5px;color:var(--faint);padding:6px 0 2px}
   .updbar{position:sticky;top:0;z-index:30;background:var(--accent);color:var(--onAccent);
-    font-size:12px;font-weight:600;text-align:center;padding:9px 12px;cursor:pointer}
+    font-size:12px;font-weight:600;text-align:center;cursor:pointer;
+    padding:calc(9px + env(safe-area-inset-top)) 12px 9px}
 
   /* écran réglages */
-  #setup{position:fixed;inset:0;background:var(--bg);z-index:20;padding:22px 18px;
+  #setup{position:fixed;inset:0;background:var(--bg);z-index:20;
+    padding:calc(22px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom));
     display:none;flex-direction:column;gap:14px;overflow:auto}
   #setup.show{display:flex}
   #setup > div > *{margin-bottom:12px}
@@ -247,7 +251,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.11";
+const COCKPIT_VERSION = "0.12";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -352,7 +356,7 @@ function mergeFleet(devs){
     && !(Array.isArray(v) && v.length === 0)
     && !(typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0);
   const pick = k => (devs.find(d => filled(d[k])) || devs[0])[k];
-  for(const k of ["weather","agenda","todos","news","mail","jobs","parcels","trips","callTime"])
+  for(const k of ["weather","agenda","todos","news","mail","jobs","parcels","trips","callTime","birthdays"])
     m[k] = pick(k);
   m.scratchpad = devs.map(d => d.scratchpad).find(s => s) || "";
 
@@ -457,9 +461,17 @@ function persistCollapse(){
 }
 
 /// Cartes utiles mais calmes : on ne garde que l'entête (dépliable au clic).
+function timelineHasToday(){
+  const s = snap;
+  return (s.agenda||[]).some(e=>!e.allDay && isToday(e.start) && new Date(e.end||e.start) > Date.now()-1800000)
+    || (s.trips||[]).some(t=> t.departure && isToday(t.departure) && tripPhase(t) !== "done")
+    || (s.todos||[]).some(r=> r.due && isToday(r.due))
+    || (s.birthdays||[]).some(b=> isToday(b.date));
+}
 function quiet(kind){
   const s = snap;
   switch(kind){
+    case "timeline": return !timelineHasToday();
     case "mail":   { const it=((s.mail&&s.mail.items)||[]).filter(m=>under1d(m.date));
       return !it.length || it.every(m=>m.seen); }
     case "jobs":   { const w=((s.mail&&s.mail.items)||[]).filter(m=>m.reason==="work"&&under1d(m.date));
@@ -474,7 +486,7 @@ function quiet(kind){
     default: return false;
   }
 }
-const CQUIET = { mail:"tout lu", jobs:"à jour", agenda:"rien aujourd'hui", scratchpad:"vide", news:"tout lu" };
+const CQUIET = { mail:"tout lu", jobs:"à jour", agenda:"rien aujourd'hui", scratchpad:"vide", news:"tout lu", timeline:"rien aujourd'hui" };
 function collapseNote(kind){
   if(kind==="news" && quiet("news")){
     const fresh=(snap.news||[]).filter(a=>under1d(a.date));
@@ -526,6 +538,7 @@ function render(){
   // Version mobile volontairement resserrée : pas de disque, batteries,
   // fuseaux d'appel (ça vit sur le Mac). Ici : ce qui compte maintenant.
   app.append(
+    finalize(timelineCard(),"timeline"),
     finalize(weatherCard(),"weather"), finalize(tripsCard(),"trips"),
     finalize(agendaCard(),"agenda"), finalize(todosCard(),"todos"),
     finalize(mailCard(),"mail"), finalize(jobsCard(),"jobs"),
@@ -533,6 +546,80 @@ function render(){
     finalize(scratchCard(),"scratchpad"), finalize(newsCard(),"news")
   );
   for(const n of [...app.childNodes]) if(!n || n.dataset && n.dataset.empty) n.remove && n.remove();
+}
+
+const TRIP_MARGIN = { train:20, flight:90, bus:15, boat:45 };   // minutes avant le départ
+
+// « Aujourd'hui » : agenda + trajets + « partir pour » + rappels + anniversaires,
+// dans l'ordre chronologique, avec un repère « maintenant ».
+function timelineCard(){
+  if(!snap.agenda && !snap.trips && !snap.todos) return "";
+  const now = Date.now();
+  const E = [];
+
+  for(const e of (snap.agenda||[])){
+    if(e.allDay || !isToday(e.start)) continue;
+    let sub = hm(e.start); if(e.end) sub += "–"+hm(e.end); if(e.location) sub += " · "+e.location;
+    E.push({ at:+new Date(e.start), kind:"event", title:e.title, sub, video:e.videoURL });
+  }
+  for(const t of (snap.trips||[])){
+    if(!t.departure || !isToday(t.departure)) continue;
+    const ph = tripPhase(t); if(ph === "done") continue;
+    E.push({ at:+new Date(t.departure), kind:"trip",
+             title:t.title || "Trajet",
+             sub: ph === "transit" ? "en cours" : hm(t.departure), maps:t.mapsURL });
+    if(ph === "upcoming"){
+      const leave = +new Date(t.departure) - (TRIP_MARGIN[t.mode]||20)*60000;
+      if(leave > now - 300000)
+        E.push({ at:leave, kind:"leave",
+                 title:"Partir pour "+(t.origin||"le trajet"),
+                 sub:"pour "+hm(t.departure), maps:t.mapsURL });
+    }
+  }
+  for(const r of (snap.todos||[])){
+    if(!r.due || !isToday(r.due)) continue;
+    E.push({ at:+new Date(r.due), kind:"reminder", title:r.title, sub:hm(r.due) });
+  }
+  for(const b of (snap.birthdays||[])){
+    if(!isToday(b.date)) continue;
+    E.push({ at:+new Date(b.date), kind:"bday", title:"Anniversaire · "+b.name,
+             sub: b.turning ? b.turning+" ans" : null });
+  }
+  E.sort((a,b)=> a.at - b.at);
+
+  const nextB = (snap.birthdays||[]).map(b=>({...b, d: Math.round((new Date(new Date(b.date).setHours(0,0,0,0)) - new Date(new Date().setHours(0,0,0,0)))/864e5)}))
+    .filter(b=> b.d > 0 && b.d <= 10).sort((a,b)=>a.d-b.d)[0];
+
+  if(!E.length && !nextB) return "";
+  const { card:c, body:b } = card("Aujourd'hui","▦");
+  const ICON = { event:"•", trip:"🚆", leave:"🚶", reminder:"✓", bday:"🎁" };
+
+  let markerDone = false;
+  const marker = ()=>{ const d=el("div"); d.style.cssText="height:1px;background:var(--warn);margin:6px 0 6px 46px;box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 20%,transparent)"; return d; };
+
+  E.forEach((e,i)=>{
+    if(!markerDone && e.at > now){ b.append(marker()); markerDone = true; }
+    const past = e.at < now;
+    const r = el("div","row"); r.style.opacity = past && e.kind!=="trip" ? .55 : 1;
+    const tm = el("div","num"); tm.textContent = hm(new Date(e.at).toISOString());
+    tm.style.cssText = "width:40px;text-align:right;font-size:10px;color:var(--faint);flex-shrink:0";
+    r.append(tm, (()=>{const s=el("div");s.textContent=ICON[e.kind];s.style.cssText="width:16px;text-align:center;font-size:10px";return s;})());
+    const m = el("div","main");
+    m.append(el("div","t",e.title));
+    if(e.sub) m.append(el("div","s",e.sub));
+    r.append(m);
+    if(e.video && (!past || e.at > now - 3600000)){ const a=el("a",null,"🎥"); a.href=e.video; a.target="_blank"; a.style.cssText="font-size:14px;padding:0 3px"; r.append(a); }
+    else if(e.maps && (e.kind==="leave"||e.kind==="trip")){ const a=el("a",null,"🗺"); a.href=e.maps; a.style.cssText="font-size:14px;padding:0 3px"; r.append(a); }
+    b.append(r);
+  });
+  if(!markerDone && E.length) b.append(marker());
+  if(!E.length) b.append(el("div","muted","Rien de prévu aujourd'hui"));
+  if(nextB){
+    const p = el("div","s"); p.style.cssText = "border-top:1px solid var(--line);margin-top:6px;padding-top:6px;white-space:normal";
+    p.textContent = "🎁 Anniv "+nextB.name+" "+(nextB.d===1?"demain":"dans "+nextB.d+" j")+(nextB.turning?" ("+nextB.turning+" ans)":"");
+    b.append(p);
+  }
+  return c;
 }
 
 // Où en est le trajet : avant le départ, en cours, ou fini (1 min après l'arrivée).

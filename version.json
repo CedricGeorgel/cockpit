@@ -1,1 +1,1 @@
-{"version":"0.11","url":"Cockpit.dmg","notes":"Version en footer \u00b7 m\u00e9t\u00e9o actionnable (parapluie/manteau) \u00b7 rappels en langage naturel (\u00ab demain 9h \u00bb) \u00b7 suivi de colis manuel \u00b7 anniversaires des contacts"}
+{"version":"0.12","url":"Cockpit.dmg","notes":"Timeline \u00ab Aujourd'hui \u00bb + anniversaires sur la PWA \u00b7 padding safe-area iOS (fin du chevauchement avec la barre d'\u00e9tat)"}
