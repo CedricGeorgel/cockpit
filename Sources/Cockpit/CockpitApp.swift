@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -9,15 +9,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // La fenêtre SwiftUI n'existe pas toujours au tout premier instant.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.configureWindow() }
 
+        if UserDefaults.standard.object(forKey: "cockpit.menubar") as? Bool ?? true {
+            MenuBarController.shared.setVisible(true)
+        }
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.ensureAllWindowsOnScreen() }
     }
 
+    private var menuBarOn: Bool { UserDefaults.standard.object(forKey: "cockpit.menubar") as? Bool ?? true }
+
     private func configureWindow() {
         guard let w = NSApp.windows.first(where: { $0.contentView != nil && $0.canBecomeMain }) else { return }
         w.titlebarAppearsTransparent = true
         w.isMovableByWindowBackground = false
+        w.delegate = self
         w.backgroundColor = NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                 ? NSColor(srgbRed: 0.086, green: 0.096, blue: 0.114, alpha: 1)
@@ -26,6 +33,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.setFrameAutosaveName("CockpitMainWindow")
         ensureOnScreen(w)
         w.makeKeyAndOrderFront(nil)
+    }
+
+    /// Fenêtre fermée alors que la barre de menus est active : on masque au lieu
+    /// de fermer, l'app continue de tourner.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard menuBarOn else { return true }
+        sender.orderOut(nil)
+        return false
     }
 
     private func ensureAllWindowsOnScreen() {
@@ -52,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { !menuBarOn }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if let w = sender.windows.first {
@@ -92,5 +107,7 @@ struct CockpitApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
         }
+
+        Settings { SettingsView() }
     }
 }

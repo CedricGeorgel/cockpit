@@ -20,6 +20,7 @@ final class Services: ObservableObject {
 
     private init() {}
 
+    @MainActor
     func startAll() {
         guard !started else { return }
         started = true
@@ -35,6 +36,8 @@ final class Services: ObservableObject {
         battery.start()
         parcels.start()
 
+        CockpitStatus.shared.start()
+
         // Rafraîchissements légers.
         Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             self?.disk.refreshVolume()
@@ -45,5 +48,12 @@ final class Services: ObservableObject {
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             self?.news.refresh()
         }
+    }
+
+    @MainActor
+    func refreshEverything() {
+        weather.refresh(); news.refresh(); mail.refreshAll(); parcels.refresh()
+        calendar.reload(); todos.reload(); battery.refresh(); disk.refreshVolume()
+        CockpitStatus.shared.recompute()
     }
 }
