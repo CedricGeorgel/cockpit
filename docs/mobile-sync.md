@@ -19,8 +19,11 @@ compte = l'identifiant Google. Un proche qui se connecte avec *son* Google a
  GET  ?f=commands   ◀──── data/acct/<id>/commands.json  ◀─POST ?f=commands── cocher / +
 ```
 
-Tout est fourni dans `server/` (relais PHP) et `web/` (PWA). **Aucun SSH, aucun
-git** (un dépôt FTP suffit).
+Tout le déployable est dans **`web/`** (PWA + `relay.php` + `.htaccess`). Deux
+façons de le mettre en ligne, **aucun SSH requis** :
+- **FTP** : dézippe `cockpit-deploy.zip` dans le docroot (premier déploiement).
+- **Git** : `init.php` une fois, puis `deploy.php?key=…` à chaque mise à jour
+  (voir « Déploiement Git » plus bas). Recommandé si tu itères souvent.
 
 ## 1. Créer l'app Google (~10 min, une fois)
 
@@ -44,7 +47,7 @@ Une seule app suffit : le Mac passe par le relais, jamais directement par Google
 
 ## 2. `config.php`
 
-Dans `server/`, copie `config.sample.php` en **`config.php`** et colle tes
+Dans le docroot, copie `config.sample.php` en **`config.php`** et colle tes
 identifiants :
 
 ```php
@@ -55,28 +58,42 @@ identifiants :
 `signup_code` / `max_instances` ne concernent que l'ancienne création d'instance
 par clé (rétro-compat), sans effet sur la connexion Google.
 
-## 3. Envoyer par FTP (tout au même niveau)
+## 3. Mettre en ligne le contenu de `web/`
 
-Dans un sous-domaine dédié ou un dossier servi en **HTTPS**, dépose le contenu de
-`web/` **et** de `server/` côte à côte :
+Dans un sous-domaine servi en **HTTPS**, le docroot doit contenir :
 
 ```
-racine du site/
-├── relay.php            (server/)
-├── config.php           (celui que tu as créé)
-├── .htaccess            (server/)
-├── index.html           (web/)
-├── sw.js
-├── manifest.webmanifest
-├── icons/
-└── data/
-    └── .htaccess        (server/data/, bloque l'accès direct aux JSON)
+docroot/
+├── index.html  relay.php  sw.js  manifest.webmanifest  version.json
+├── Cockpit.dmg           (le DMG, pour la landing ; téléversé à la main)
+├── config.php            (créé à l'étape 2, jamais dans Git)
+├── .htaccess   icons/
+└── data/  └── .htaccess  (bloque l'accès direct aux JSON ; data/ inscriptible, chmod 755)
 ```
 
-> `index.html` et `relay.php` **dans le même dossier** : la PWA trouve le relais
-> toute seule. `data/` doit être inscriptible (chmod 755 chez OVH). L'URI de
-> redirection Google doit correspondre **exactement** à l'emplacement réel de
-> `relay.php`.
+`index.html` et `relay.php` **dans le même dossier**. L'URI de redirection Google
+doit pointer **exactement** sur `relay.php` (`https://TON-DOMAINE/relay.php`).
+
+### Déploiement Git (mises à jour rapides)
+
+Dépôt privé + `deploy.php` (pas de webhook OVH nécessaire) :
+
+1. Repo GitHub privé `cockpit`. Crée un **fine-grained PAT** en lecture seule sur
+   ce dépôt.
+2. Sur le serveur, crée `~/cockpit/web/`, règle le docroot du sous-domaine sur
+   `~/cockpit/web`.
+3. Édite `web/init.php` (les 4 constantes : `$REPO` avec le token, `$KEY`
+   aléatoire, `$SUBDIR='web'`), téléverse-le dans `~/cockpit/web/`, ouvre
+   `https://TON-DOMAINE/init.php?go=LA_CLE`. Ça `git init` `~/cockpit`, récupère
+   `main`, écrit `deploy.config.php`. **Supprime `init.php`** ensuite.
+4. Crée `config.php` (clés Google) dans `~/cockpit/web/`.
+5. Mises à jour suivantes : `https://TON-DOMAINE/deploy.php?key=LA_CLE` (à la
+   main, ou depuis un GitHub Action après merge). `config.php`, `data/`,
+   `Cockpit.dmg` sont ignorés par Git et survivent au `reset --hard`.
+
+Le token vit dans `~/cockpit/.git/config`, **hors** du docroot. Pour publier une
+nouvelle version : bump `VERSION` dans `build.sh`, `./package.sh "notes"`,
+téléverse le nouveau `Cockpit.dmg`, commite `web/version.json`, `deploy.php`.
 
 ## 4. Vérifier
 

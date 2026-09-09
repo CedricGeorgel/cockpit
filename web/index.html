@@ -13,7 +13,7 @@
   :root{
     --bg:#0f1115; --card:#171a21; --head:#1c2029; --line:rgba(255,255,255,.08);
     --text:#e6e8ec; --dim:#a2a8b4; --faint:#6b7280; --soft:rgba(255,255,255,.05);
-    --accent:#2ecc8f; --warn:#d9822b; --info:#4a86d1; --onAccent:#052;
+    --accent:#2ecc8f; --warn:#d9822b; --info:#4a86d1; --danger:#ff5f52; --onAccent:#052;
     --r:14px;
   }
   /* thème clair : suit le système, sauf choix explicite */
@@ -21,18 +21,30 @@
     :root:not([data-theme="dark"]){
       --bg:#f4f5f7; --card:#ffffff; --head:#eef0f3; --line:rgba(0,0,0,.10);
       --text:#1b1e24; --dim:#5b626e; --faint:#8a909c; --soft:rgba(0,0,0,.045);
-      --accent:#129e6b; --warn:#c9761f; --info:#2f6fbf; --onAccent:#fff;
+      --accent:#129e6b; --warn:#c9761f; --info:#2f6fbf; --danger:#d92b1f; --onAccent:#fff;
     }
   }
   :root[data-theme="light"]{
     --bg:#f4f5f7; --card:#ffffff; --head:#eef0f3; --line:rgba(0,0,0,.10);
     --text:#1b1e24; --dim:#5b626e; --faint:#8a909c; --soft:rgba(0,0,0,.045);
-    --accent:#129e6b; --warn:#c9761f; --info:#2f6fbf; --onAccent:#fff;
+    --accent:#129e6b; --warn:#c9761f; --info:#2f6fbf; --danger:#d92b1f; --onAccent:#fff;
   }
   *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+  [hidden]{display:none!important}
   html,body{background:var(--bg);color:var(--text);
     font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
-  body{padding:0 12px calc(28px + env(safe-area-inset-bottom));max-width:520px;margin:0 auto}
+  body{padding:0 12px calc(28px + env(safe-area-inset-bottom));max-width:560px;margin:0 auto}
+  /* tablette / ordinateur : cartes en colonnes façon maçonnerie */
+  @media (min-width:720px){
+    body{max-width:900px;padding-left:18px;padding-right:18px}
+    #app{columns:2;column-gap:14px}
+    #app > .card{break-inside:avoid}
+  }
+  @media (min-width:1180px){
+    body{max-width:1320px}
+    #app{columns:3}
+  }
+  @media (min-width:1180px){ #setup{align-items:center} #setup > div{max-width:460px;width:100%} }
   a{color:var(--info);text-decoration:none}
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
@@ -49,6 +61,14 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);
     margin-bottom:10px;overflow:hidden}
   .card.alert{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,var(--card))}
+  .card.urgent{border-color:var(--danger);border-width:2px;
+    background:color-mix(in srgb,var(--danger) 16%,var(--card));
+    animation:urgpulse 1.4s ease-in-out infinite}
+  .card.urgent > h2{background:color-mix(in srgb,var(--danger) 22%,var(--head));color:#fff}
+  .card.urgent > h2 .ic{color:#fff}
+  @keyframes urgpulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 45%,transparent)}
+    50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--danger) 0%,transparent)}}
+  @media (prefers-reduced-motion:reduce){ .card.urgent{animation:none} }
   .card.collapsed > h2{border-bottom:0;cursor:pointer}
   .card.collapsed > h2 .ic{color:var(--faint)}
   .card.collapsed > h2 > span:nth-child(2){color:var(--dim);font-weight:500}
@@ -510,8 +530,10 @@ function render(){
 function tripsCard(){
   const t = snap.trips||[]; if(!t.length) return "";
   const { card:c, body:b } = card("Trajets","🚆");
-  const soon = t.some(x => { if(!x.departure) return false; const s=(new Date(x.departure)-new Date())/1000; return s<3600 && s>-1800; });
-  if(soon) c.classList.add("alert");
+  const secsTo = x => x.departure ? (new Date(x.departure)-new Date())/1000 : Infinity;
+  const soon   = t.some(x => { const s=secsTo(x); return s<3600 && s>-1800; });
+  const urgent = t.some(x => { const s=secsTo(x); return s<1800 && s>-1800; });
+  if(urgent) c.classList.add("urgent"); else if(soon) c.classList.add("alert");
   const MICON = { train:"🚆", flight:"✈️", boat:"⛴️", bus:"🚌" };
   for(const x of t){
     const r = el("div","row box");

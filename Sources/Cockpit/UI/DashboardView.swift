@@ -12,6 +12,7 @@ struct DashboardView: View {
     @ObservedObject private var weather = Services.shared.weather
     @ObservedObject private var news = Services.shared.news
     @ObservedObject private var todos = Services.shared.todos
+    @ObservedObject private var update = UpdateChecker.shared
     @AppStorage("cockpit.theme") private var theme = "auto"   // auto | light | dark
 
     /// Priment sur le repli automatique (le temps de la session).
@@ -175,13 +176,23 @@ struct DashboardView: View {
         TripsDigest.compute(calendar.events, mails: mail.sources.flatMap { mail.state($0.id).mails })
     }
 
-    /// Une carte passe en alerte (bordure rouge) quand elle porte une info urgente.
+    /// Une carte passe en alerte (bordure orange) quand elle porte une info urgente.
     private func alerting(_ kind: ModuleKind) -> Bool {
         guard kind == .trips, !canvas.editing else { return false }
         return tripsList.contains {
             guard let dep = $0.departure else { return false }
             let dt = dep.timeIntervalSinceNow
             return dt < 3600 && dt > -1800
+        }
+    }
+
+    /// Alerte renforcée (rouge vif) : trajet dans moins de 30 minutes.
+    private func urgentAlerting(_ kind: ModuleKind) -> Bool {
+        guard kind == .trips, !canvas.editing else { return false }
+        return tripsList.contains {
+            guard let dep = $0.departure else { return false }
+            let dt = dep.timeIntervalSinceNow
+            return dt < 1800 && dt > -1800
         }
     }
 
@@ -194,7 +205,7 @@ struct DashboardView: View {
             ForEach(Array(kinds.enumerated()), id: \.element) { i, kind in
                 let r = m.cardRect(col: col, index: i, heights: heights)
                 ModuleCard(kind: kind, canvas: canvas, metrics: m,
-                           alert: alerting(kind), tint: tint(kind),
+                           alert: alerting(kind), urgent: urgentAlerting(kind), tint: tint(kind),
                            collapsed: collapsed(kind), collapsedNote: collapsedNote(kind),
                            onToggle: { toggleCollapse(kind) }) {
                     ModuleHost(kind: kind, services: services)
@@ -234,6 +245,31 @@ struct DashboardView: View {
         list.insert(dragged, at: idx)
         let heights = m.cardHeights(list.map { canvas.weight($0) })
         return m.cardRect(col: d.col, index: idx, heights: heights)
+    }
+}
+
+struct UpdateBanner: View {
+    let update: UpdateChecker.Available
+    @State private var dismissed = false
+
+    var body: some View {
+        if !dismissed {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(Theme.accent)
+                Text("Cockpit \(update.version) est disponible" + (update.notes.isEmpty ? "" : " · \(update.notes)"))
+                    .font(.ui(11, .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                Spacer(minLength: 8)
+                Button("Télécharger") { UpdateChecker.shared.openDownload() }
+                    .buttonStyle(GhostButtonStyle(prominent: true))
+                Button { dismissed = true } label: {
+                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(Theme.textFaint)
+                }.buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .background(Theme.card)
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+        }
     }
 }
 

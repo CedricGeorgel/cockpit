@@ -52,7 +52,7 @@ final class UpdateChecker: ObservableObject {
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.timeoutInterval = 15
         URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
-            guard let data,
+            guard let self, let data,
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let remote = obj["version"] as? String
             else { return }

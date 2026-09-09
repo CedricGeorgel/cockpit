@@ -52,6 +52,8 @@ enum Theme {
                                      dark:  rgb(0.290, 0.780, 0.560))
     static let warn = dynamicColor(light: rgb(0.761, 0.290, 0.075),
                                    dark:  rgb(0.925, 0.478, 0.310))
+    static let danger = dynamicColor(light: rgb(0.843, 0.153, 0.153),   // #d72727
+                                     dark:  rgb(1.000, 0.376, 0.361))
     static let info = dynamicColor(light: rgb(0.176, 0.404, 0.741),
                                    dark:  rgb(0.451, 0.647, 0.965))
 }

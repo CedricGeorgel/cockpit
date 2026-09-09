@@ -62,6 +62,7 @@ struct ModuleCard<Content: View>: View {
     @ObservedObject var canvas: CanvasModel
     let metrics: ColumnMetrics
     var alert: Bool = false
+    var urgent: Bool = false          // alerte renforcée (ex. trajet dans < 30 min)
     var tint: Color? = nil
     var collapsed: Bool = false
     var collapsedNote: String? = nil
@@ -85,12 +86,15 @@ struct ModuleCard<Content: View>: View {
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.card)
                 .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(alert ? Theme.warn.opacity(scheme == .dark ? 0.16 : 0.10)
+                    .fill(urgent ? Theme.danger.opacity(scheme == .dark ? 0.30 : 0.20)
+                          : alert ? Theme.warn.opacity(scheme == .dark ? 0.16 : 0.10)
                           : (tint?.opacity(scheme == .dark ? 0.16 : 0.12) ?? .clear)))
         )
         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .strokeBorder(isDragging ? Theme.accent.opacity(0.5) : alert ? Theme.warn.opacity(0.75) : Theme.hairline,
-                          style: StrokeStyle(lineWidth: isDragging ? 1.5 : alert ? 1.5 : 1,
+            .strokeBorder(isDragging ? Theme.accent.opacity(0.5)
+                          : urgent ? Theme.danger
+                          : alert ? Theme.warn.opacity(0.75) : Theme.hairline,
+                          style: StrokeStyle(lineWidth: isDragging ? 1.5 : urgent ? 2 : alert ? 1.5 : 1,
                                              dash: isDragging ? [5, 4] : [])))
         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .shadow(color: .black.opacity(scheme == .dark ? 0.34 : 0.10), radius: 7, y: 4)

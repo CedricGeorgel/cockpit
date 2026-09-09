@@ -1,5 +1,25 @@
+# --- macOS / Swift build ---
 .build/
 build/
-Cockpit.app/
-.DS_Store
 dist/
+DerivedData/
+*.xcodeproj
+.DS_Store
+Cockpit.app/
+Cockpit [0-9]*.app/
+
+# --- artefacts d'empaquetage (régénérés par package.sh) ---
+*.dmg
+cockpit-deploy.zip
+web/Cockpit.dmg
+
+# --- serveur : secrets & données runtime (jamais committés) ---
+web/config.php
+web/deploy.config.php
+web/init.php
+web/data/*
+!web/data/.htaccess
+
+# --- divers ---
+*.log
+.env
