@@ -278,7 +278,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.17";
+const COCKPIT_VERSION = "0.18";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -643,7 +643,7 @@ function timelineCard(){
     const r = el("div","tl-row");
     r.append(el("div","tl-spine"+(over && e.kind!=="trip" ? " past":"")));
     const rest = el("div"); rest.style.cssText="display:flex;align-items:flex-start;gap:8px;flex:1;min-width:0";
-    if(past && e.kind!=="trip") rest.style.opacity=".6";
+    if(over && e.kind!=="trip") rest.style.opacity=".55";
     const tm = el("div","num"); tm.textContent = hm(new Date(e.at).toISOString());
     tm.style.cssText = "width:40px;text-align:right;font-size:10px;color:var(--faint);flex:none;padding-top:1px";
     const ic = el("div"); ic.textContent = ICON[e.kind];

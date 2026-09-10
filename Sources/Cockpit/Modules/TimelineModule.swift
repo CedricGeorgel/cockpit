@@ -189,7 +189,7 @@ struct TimelineModule: View {
             }
             .padding(.leading, 9)
             .padding(.vertical, 2.5)
-            .opacity(past && e.kind != .trip ? 0.6 : 1)
+            .opacity(over && e.kind != .trip ? 0.55 : 1)
         }
     }
 
