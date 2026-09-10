@@ -100,12 +100,6 @@ struct DashboardView: View {
         case .jobs:
             let work = mail.sources.flatMap { mail.state($0.id).mails }.filter { $0.reason == .work }
             return !work.isEmpty && work.allSatisfy(\.seen)
-        case .calendar:
-            let cal = Calendar.current
-            return !calendar.events.contains { e in
-                guard let s = e.start else { return e.allDay }
-                return cal.isDateInToday(s) && (e.end ?? s) > Date().addingTimeInterval(-1800)
-            }
         case .todos:      return todos.items.isEmpty
         case .scratchpad: return scratchEmpty
         case .news:       return news.allRead || news.nothingFresh
@@ -133,10 +127,9 @@ struct DashboardView: View {
             switch kind {
             case .mail:       return "tout lu"
             case .jobs:       return "à jour"
-            case .calendar:   return "rien aujourd'hui"
             case .scratchpad: return "vide"
             case .news:       return news.allRead ? "tout lu" : "rien de neuf"
-            case .timeline:   return "rien aujourd'hui"
+            case .timeline:   return "rien de prévu"
             default:          return nil
             }
         }
@@ -150,10 +143,9 @@ struct DashboardView: View {
         case .news:
             let n = news.items.filter { !news.read.contains($0.link?.absoluteString ?? "") }.count
             return n > 0 ? "\(n) à lire" : nil
-        case .calendar:
-            let cal = Calendar.current
-            let n = calendar.events.filter { $0.start.map { cal.isDateInToday($0) } ?? $0.allDay }.count
-            return n > 0 ? "\(n) aujourd'hui" : nil
+        case .timeline:
+            let n = TimelineModule.entries(calendar, todos, mail, Services.shared.birthdays).count
+            return n > 0 ? "\(n)" : nil
         default:
             return nil
         }
@@ -446,7 +438,6 @@ struct ModuleHost: View {
         switch kind {
         case .disk:       DiskModule(model: services.disk)
         case .timeline:   TimelineModule(calendar: services.calendar, todos: services.todos, mail: services.mail, birthdays: services.birthdays)
-        case .calendar:   CalendarModule(model: services.calendar)
         case .weather:    WeatherModule(model: services.weather)
         case .scratchpad: ScratchpadModule()
         case .callTime:   CallTimeModule()

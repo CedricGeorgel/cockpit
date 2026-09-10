@@ -5,7 +5,6 @@ import SwiftUI
 enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     case disk
     case timeline
-    case calendar
     case weather
     case scratchpad
     case callTime
@@ -24,7 +23,6 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .disk:       return "Disque & système"
         case .timeline:   return "Aujourd'hui"
-        case .calendar:   return "Agenda"
         case .weather:    return "Météo"
         case .scratchpad: return "Bloc-notes"
         case .callTime:   return "Bon moment pour appeler"
@@ -43,7 +41,6 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .disk:       return "internaldrive"
         case .timeline:   return "calendar.day.timeline.left"
-        case .calendar:   return "calendar"
         case .weather:    return "cloud.sun"
         case .scratchpad: return "note.text"
         case .callTime:   return "phone.arrow.up.right"
@@ -61,11 +58,10 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     /// Poids de hauteur par défaut dans sa colonne.
     var defaultWeight: Double {
         switch self {
-        case .timeline:   return 1.6
+        case .timeline:   return 2.1
         case .weather:    return 1.0
         case .disk:       return 1.5
         case .nowPlaying: return 0.5
-        case .calendar:   return 1.3
         case .todos:      return 1.2
         case .news:       return 1.8
         case .scratchpad: return 1.0
@@ -112,7 +108,7 @@ final class CanvasModel: ObservableObject {
 
     /// Incrémenté quand les poids par défaut changent : les cartes non
     /// retouchées reprennent la nouvelle valeur.
-    private static let weightsVersion = 2
+    private static let weightsVersion = 3
 
     init() {
         (columnCount, columns, weights, hidden, editing) = Self.decode()
@@ -131,8 +127,11 @@ final class CanvasModel: ObservableObject {
         var w = Dictionary(uniqueKeysWithValues: p.weights.compactMap { key, v in
             ModuleKind(rawValue: key).map { ($0, v) }
         })
-        if (p.weightsVersion ?? 1) < weightsVersion {
+        if (p.weightsVersion ?? 1) < 2 {
             w[.nowPlaying] = ModuleKind.nowPlaying.defaultWeight
+        }
+        if (p.weightsVersion ?? 1) < 3 {
+            w[.timeline] = ModuleKind.timeline.defaultWeight   // « Aujourd'hui » couvre aujourd'hui + demain
         }
         return (min(max(2, p.columnCount), 4),
                 p.columns.map { $0.compactMap(ModuleKind.init(rawValue:)) },
@@ -325,7 +324,7 @@ final class CanvasModel: ObservableObject {
 
     static let defaultColumns: [[ModuleKind]] = [
         [.timeline, .weather, .disk, .nowPlaying, .battery],
-        [.mail, .jobs, .calendar, .trips, .todos],
+        [.mail, .jobs, .trips, .todos],
         [.news, .parcels, .scratchpad, .callTime],
     ]
 }

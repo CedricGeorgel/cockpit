@@ -93,6 +93,19 @@
   .row .r{text-align:right;flex-shrink:0}
   .pill{font-size:9px;font-weight:600;padding:1px 6px;border-radius:99px;white-space:nowrap}
 
+  /* frise « Aujourd'hui » : rail vertical de progression + rangées */
+  .tl-row{display:flex;align-items:stretch;gap:8px;padding:0}
+  .tl-row .main{min-width:0;flex:1}
+  .tl-row .t{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-row .s{font-size:9.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-row > div:last-child{padding:3px 0}
+  .tl-spine{width:2px;flex:none;background:var(--accent);border-radius:1px}
+  .tl-spine.past{opacity:.5}
+  .tl-div{display:flex;align-items:stretch;gap:8px}
+  .tl-div > span{font-size:9px;font-weight:700;letter-spacing:.5px;color:var(--faint);
+    text-transform:uppercase;padding:5px 0;align-self:center}
+  .tl-div::after{content:"";flex:1;height:1px;background:var(--line);align-self:center}
+
   .sect{font-size:9.5px;font-weight:700;letter-spacing:.6px;color:var(--faint);
     text-transform:uppercase;margin:9px 0 3px}
   .sect:first-child{margin-top:0}
@@ -265,7 +278,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.16";
+const COCKPIT_VERSION = "0.17";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -451,6 +464,11 @@ const hm = iso => iso ? new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit"
 const under1d = iso => !!iso && (Date.now() - new Date(iso)) < 86400000;
 const isToday = iso => { if(!iso) return false; const d=new Date(iso), t=new Date();
   return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate(); };
+// Décalage en jours (0 = aujourd'hui, 1 = demain, -1 = hier).
+const dayOff = iso => !iso ? NaN :
+  Math.round((new Date(new Date(iso).setHours(0,0,0,0)) - new Date(new Date().setHours(0,0,0,0))) / 864e5);
+const isTomorrow = iso => dayOff(iso) === 1;
+const todayOrTomorrow = iso => { const o = dayOff(iso); return o === 0 || o === 1; };
 function bytes(n){
   if(!n) return "0";
   const u=["o","Ko","Mo","Go","To"]; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;}
@@ -484,10 +502,10 @@ function persistCollapse(){
 /// Cartes utiles mais calmes : on ne garde que l'entête (dépliable au clic).
 function timelineHasToday(){
   const s = snap;
-  return (s.agenda||[]).some(e=>!e.allDay && isToday(e.start) && new Date(e.end||e.start) > Date.now()-1800000)
-    || (s.trips||[]).some(t=> t.departure && isToday(t.departure) && tripPhase(t) !== "done")
-    || (s.todos||[]).some(r=> r.due && isToday(r.due))
-    || (s.birthdays||[]).some(b=> isToday(b.date));
+  return (s.agenda||[]).some(e=>!e.allDay && todayOrTomorrow(e.start) && new Date(e.end||e.start) > Date.now()-1800000)
+    || (s.trips||[]).some(t=> t.departure && todayOrTomorrow(t.departure) && tripPhase(t) !== "done")
+    || (s.todos||[]).some(r=> r.due && todayOrTomorrow(r.due))
+    || (s.birthdays||[]).some(b=> dayOff(b.date) === 0 || dayOff(b.date) === 1);
 }
 function quiet(kind){
   const s = snap;
@@ -502,12 +520,10 @@ function quiet(kind){
     case "news":   { if(!s.news) return false;
       const fresh=(s.news||[]).filter(a=>under1d(a.date));
       return !fresh.length || fresh.every(a=>newsRead.has(a.link)); }
-    case "agenda": return !((s.agenda||[]).some(e=> isToday(e.start||e.receivedAt)
-      && new Date(e.end||e.start) > Date.now()-1800000));
     default: return false;
   }
 }
-const CQUIET = { mail:"tout lu", jobs:"à jour", agenda:"rien aujourd'hui", scratchpad:"vide", news:"tout lu", timeline:"rien aujourd'hui" };
+const CQUIET = { mail:"tout lu", jobs:"à jour", scratchpad:"vide", news:"tout lu", timeline:"rien de prévu" };
 function collapseNote(kind){
   if(kind==="news" && quiet("news")){
     const fresh=(snap.news||[]).filter(a=>under1d(a.date));
@@ -519,7 +535,6 @@ function collapseNote(kind){
     case "mail":   { const n=((s.mail&&s.mail.items)||[]).filter(m=>!m.seen&&under1d(m.date)).length; return n?n+" non lus":""; }
     case "todos":  { const n=(s.todos||[]).length; return n?String(n):""; }
     case "news":   { const n=(s.news||[]).filter(a=>under1d(a.date)&&!newsRead.has(a.link)).length; return n?n+" à lire":""; }
-    case "agenda": { const n=(s.agenda||[]).filter(e=>isToday(e.start)).length; return n?n+" aujourd'hui":""; }
     default: return "";
   }
 }
@@ -561,7 +576,7 @@ function render(){
   app.append(
     finalize(timelineCard(),"timeline"),
     finalize(weatherCard(),"weather"), finalize(tripsCard(),"trips"),
-    finalize(agendaCard(),"agenda"), finalize(todosCard(),"todos"),
+    finalize(todosCard(),"todos"),
     finalize(mailCard(),"mail"), finalize(jobsCard(),"jobs"),
     finalize(parcelsCard(),"parcels"),
     finalize(scratchCard(),"scratchpad"), finalize(newsCard(),"news")
@@ -572,24 +587,25 @@ function render(){
 const TRIP_MARGIN = { train:20, flight:90, bus:15, boat:45 };   // minutes avant le départ
 
 // « Aujourd'hui » : agenda + trajets + « partir pour » + rappels + anniversaires,
-// dans l'ordre chronologique, avec un repère « maintenant ».
+// pour aujourd'hui ET demain, sur une frise. Un rail vertical à gauche marque la
+// progression : la partie passée est à 50 % d'opacité, le présent/futur pleins.
 function timelineCard(){
   if(!snap.agenda && !snap.trips && !snap.todos) return "";
   const now = Date.now();
   const E = [];
 
   for(const e of (snap.agenda||[])){
-    if(e.allDay || !isToday(e.start)) continue;
+    if(e.allDay || !todayOrTomorrow(e.start)) continue;
     let sub = hm(e.start); if(e.end) sub += "–"+hm(e.end); if(e.location) sub += " · "+e.location;
-    E.push({ at:+new Date(e.start), kind:"event", title:e.title, sub, video:e.videoURL });
+    E.push({ at:+new Date(e.start), end: e.end?+new Date(e.end):null, kind:"event", title:e.title, sub, video:e.videoURL });
   }
   for(const t of (snap.trips||[])){
-    if(!t.departure || !isToday(t.departure)) continue;
+    if(!t.departure || !todayOrTomorrow(t.departure)) continue;
     const ph = tripPhase(t); if(ph === "done") continue;
-    E.push({ at:+new Date(t.departure), kind:"trip",
+    E.push({ at:+new Date(t.departure), end: t.arrival?+new Date(t.arrival):null, kind:"trip",
              title:t.title || "Trajet",
              sub: ph === "transit" ? "en cours" : hm(t.departure), maps:t.mapsURL });
-    if(ph === "upcoming"){
+    if(ph === "upcoming" && isToday(t.departure)){
       const leave = +new Date(t.departure) - (TRIP_MARGIN[t.mode]||20)*60000;
       if(leave > now - 300000)
         E.push({ at:leave, kind:"leave",
@@ -598,46 +614,67 @@ function timelineCard(){
     }
   }
   for(const r of (snap.todos||[])){
-    if(!r.due || !isToday(r.due)) continue;
+    if(!r.due || !todayOrTomorrow(r.due)) continue;
     E.push({ at:+new Date(r.due), kind:"reminder", title:r.title, sub:hm(r.due) });
   }
   for(const b of (snap.birthdays||[])){
-    if(!isToday(b.date)) continue;
+    const o = dayOff(b.date); if(o !== 0 && o !== 1) continue;
     E.push({ at:+new Date(b.date), kind:"bday", title:"Anniversaire · "+b.name,
              sub: b.turning ? b.turning+" ans" : null });
   }
   E.sort((a,b)=> a.at - b.at);
 
-  const nextB = (snap.birthdays||[]).map(b=>({...b, d: Math.round((new Date(new Date(b.date).setHours(0,0,0,0)) - new Date(new Date().setHours(0,0,0,0)))/864e5)}))
-    .filter(b=> b.d > 0 && b.d <= 10).sort((a,b)=>a.d-b.d)[0];
+  const nextB = (snap.birthdays||[]).map(b=>({...b, d: dayOff(b.date)}))
+    .filter(b=> b.d >= 2 && b.d <= 10).sort((a,b)=>a.d-b.d)[0];
 
   if(!E.length && !nextB) return "";
   const { card:c, body:b } = card("Aujourd'hui","▦");
   const ICON = { event:"•", trip:"🚆", leave:"🚶", reminder:"✓", bday:"🎁" };
 
-  let markerDone = false;
-  const marker = ()=>{ const d=el("div"); d.style.cssText="height:1px;background:var(--warn);margin:6px 0 6px 46px;box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 20%,transparent)"; return d; };
-
-  E.forEach((e,i)=>{
-    if(!markerDone && e.at > now){ b.append(marker()); markerDone = true; }
+  const marker = ()=>{
+    const d=el("div"); d.style.cssText="display:flex;align-items:center;gap:6px;margin:2px 0";
+    const dot=el("div"); dot.style.cssText="width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:-2.5px;flex:none";
+    const ln=el("div"); ln.style.cssText="height:1px;flex:1;background:color-mix(in srgb,var(--warn) 45%,transparent)";
+    d.append(dot,ln); return d;
+  };
+  const mkRow = e => {
     const past = e.at < now;
-    const r = el("div","row"); r.style.opacity = past && e.kind!=="trip" ? .55 : 1;
+    const over = (e.end || e.at) < now;
+    const r = el("div","tl-row");
+    r.append(el("div","tl-spine"+(over && e.kind!=="trip" ? " past":"")));
+    const rest = el("div"); rest.style.cssText="display:flex;align-items:flex-start;gap:8px;flex:1;min-width:0";
+    if(past && e.kind!=="trip") rest.style.opacity=".6";
     const tm = el("div","num"); tm.textContent = hm(new Date(e.at).toISOString());
-    tm.style.cssText = "width:40px;text-align:right;font-size:10px;color:var(--faint);flex-shrink:0";
-    r.append(tm, (()=>{const s=el("div");s.textContent=ICON[e.kind];s.style.cssText="width:16px;text-align:center;font-size:10px";return s;})());
+    tm.style.cssText = "width:40px;text-align:right;font-size:10px;color:var(--faint);flex:none;padding-top:1px";
+    const ic = el("div"); ic.textContent = ICON[e.kind];
+    ic.style.cssText = "width:15px;text-align:center;font-size:10px;flex:none;padding-top:1px";
     const m = el("div","main");
     m.append(el("div","t",e.title));
     if(e.sub) m.append(el("div","s",e.sub));
-    r.append(m);
-    if(e.video && (!past || e.at > now - 3600000)){ const a=el("a",null,"🎥"); a.href=e.video; a.target="_blank"; a.style.cssText="font-size:14px;padding:0 3px"; r.append(a); }
-    else if(e.maps && (e.kind==="leave"||e.kind==="trip")){ const a=el("a",null,"🗺"); a.href=e.maps; a.style.cssText="font-size:14px;padding:0 3px"; r.append(a); }
-    b.append(r);
+    rest.append(tm, ic, m);
+    if(e.video && (!past || e.at > now - 3600000)){ const a=el("a",null,"🎥"); a.href=e.video; a.target="_blank"; a.style.cssText="font-size:14px;padding:0 3px;flex:none"; rest.append(a); }
+    else if(e.maps && (e.kind==="leave"||e.kind==="trip")){ const a=el("a",null,"🗺"); a.href=e.maps; a.style.cssText="font-size:14px;padding:0 3px;flex:none"; rest.append(a); }
+    r.append(rest);
+    return r;
+  };
+
+  let markerDone = false, lastDay = 0, rows = 0;   // lastDay 0 = aujourd'hui
+  E.forEach(e => {
+    const dk = dayOff(new Date(e.at).toISOString());
+    if(!markerDone && e.at > now && rows > 0){ b.append(marker()); markerDone = true; }
+    if(dk !== lastDay){
+      const d = el("div","tl-div");
+      d.append(el("div","tl-spine"), el("span",null, relday(new Date(e.at).toISOString())));
+      b.append(d);
+    }
+    lastDay = dk;
+    b.append(mkRow(e)); rows++;
   });
-  if(!markerDone && E.length) b.append(marker());
-  if(!E.length) b.append(el("div","muted","Rien de prévu aujourd'hui"));
+  if(!markerDone && rows > 0) b.append(marker());
+  if(!E.length) b.append(el("div","muted","Rien de prévu"));
   if(nextB){
     const p = el("div","s"); p.style.cssText = "border-top:1px solid var(--line);margin-top:6px;padding-top:6px;white-space:normal";
-    p.textContent = "🎁 Anniv "+nextB.name+" "+(nextB.d===1?"demain":"dans "+nextB.d+" j")+(nextB.turning?" ("+nextB.turning+" ans)":"");
+    p.textContent = "🎁 Anniv "+nextB.name+" dans "+nextB.d+" j"+(nextB.turning?" ("+nextB.turning+" ans)":"");
     b.append(p);
   }
   return c;
@@ -727,46 +764,6 @@ function weatherCard(){
   return c;
 }
 
-
-function agendaCard(){
-  if(!snap.agenda) return "";
-  const all = snap.agenda||[];
-  const today = all.filter(e => isToday(e.start||e.receivedAt));
-  const later = all.filter(e => !isToday(e.start||e.receivedAt));
-  const { card:c, body:b } = card("Agenda","▦");
-  const evRow = e => {
-    const r = el("div","row box"), m = el("div","main");
-    m.append(el("div","t",e.title));
-    const when = e.allDay ? "toute la journée" : [hm(e.start), e.location].filter(Boolean).join(" · ");
-    if(when) m.append(el("div","s",when));
-    r.append(m);
-    // Rejoindre la visio, de 10 min avant à la fin.
-    if(e.videoURL){
-      const s = +new Date(e.start), en = e.end ? +new Date(e.end) : s + 3600e3;
-      if(Date.now() >= s - 600e3 && Date.now() <= en){
-        const a = el("a",null,"🎥"); a.href = e.videoURL; a.target = "_blank";
-        a.style.cssText = "font-size:15px;padding:0 4px"; r.append(a);
-      }
-    }
-    return r;
-  };
-  if(!today.length) b.append(el("div","muted","Rien aujourd'hui"));
-  for(const e of today) b.append(evRow(e));
-  if(later.length){
-    const acc = el("button","w-acc");
-    acc.append(el("span",null, later.length + " à venir"),
-      (()=>{const s=el("span");s.textContent="▾";s.style.marginLeft="auto";return s;})());
-    const wrap = el("div"); wrap.hidden = true;
-    let day = null;
-    for(const e of later){
-      if(e.dayLabel !== day){ day = e.dayLabel; wrap.append(el("div","sect",day)); }
-      wrap.append(evRow(e));
-    }
-    acc.onclick = ()=>{ wrap.hidden = !wrap.hidden; };
-    b.append(acc, wrap);
-  }
-  return c;
-}
 
 function todosCard(){
   const items = snap.todos||[];
