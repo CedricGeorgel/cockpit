@@ -96,16 +96,16 @@ struct TimelineModule: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        let cal = Calendar.current
                         ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
-                            if i > 0 {
-                                let prev = entries[i - 1]
-                                if prev.at <= now, e.at > now { nowMarker }
-                                if !Calendar.current.isDate(prev.at, inSameDayAs: e.at) {
-                                    dayDivider(e.at)
-                                }
+                            // Repère « maintenant » : au passage passé → à venir (i = 0 inclus).
+                            if e.at > now, i == 0 || entries[i - 1].at <= now { nowMarker }
+                            if i > 0, !cal.isDate(entries[i - 1].at, inSameDayAs: e.at) {
+                                dayDivider(e.at)
                             }
                             row(e)
                         }
+                        // Journée finie : le repère se pose en fin de liste.
                         if let last = entries.last, last.at <= now { nowMarker }
                         if let b = nextBirthday { birthdayPeek(b) }
                     }
@@ -127,13 +127,14 @@ struct TimelineModule: View {
     }
 
     private var nowMarker: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 5) {
             Circle().fill(Theme.warn).frame(width: 7, height: 7).offset(x: -2.5)
                 .frame(width: 2, alignment: .leading)
+            Text(Fmt.shortTime(now))
+                .font(.num(8, .bold)).monospacedDigit().foregroundStyle(Theme.warn)
             Rectangle().fill(Theme.warn.opacity(0.35)).frame(height: 1)
-                .padding(.leading, 9)
         }
-        .padding(.vertical, 3)
+        .padding(.leading, 0).padding(.vertical, 3)
     }
 
     private func dayDivider(_ date: Date) -> some View {

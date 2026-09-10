@@ -278,7 +278,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.18";
+const COCKPIT_VERSION = "0.19";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -634,8 +634,10 @@ function timelineCard(){
   const marker = ()=>{
     const d=el("div"); d.style.cssText="display:flex;align-items:center;gap:6px;margin:2px 0";
     const dot=el("div"); dot.style.cssText="width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:-2.5px;flex:none";
+    const lb=el("div"); lb.textContent=hm(new Date().toISOString());
+    lb.style.cssText="font-size:8.5px;font-weight:700;color:var(--warn);flex:none";
     const ln=el("div"); ln.style.cssText="height:1px;flex:1;background:color-mix(in srgb,var(--warn) 45%,transparent)";
-    d.append(dot,ln); return d;
+    d.append(dot,lb,ln); return d;
   };
   const mkRow = e => {
     const past = e.at < now;
@@ -658,10 +660,15 @@ function timelineCard(){
     return r;
   };
 
+  const hasFutureToday = E.some(e => e.at > now && dayOff(new Date(e.at).toISOString()) === 0);
+  const hasPastToday   = E.some(e => e.at <= now && dayOff(new Date(e.at).toISOString()) === 0);
   let markerDone = false, lastDay = 0, rows = 0;   // lastDay 0 = aujourd'hui
   E.forEach(e => {
     const dk = dayOff(new Date(e.at).toISOString());
-    if(!markerDone && e.at > now && rows > 0){ b.append(marker()); markerDone = true; }
+    // Repère « maintenant » : avant la 1re entrée encore à venir aujourd'hui…
+    if(!markerDone && e.at > now && dk === 0){ b.append(marker()); markerDone = true; }
+    // …ou, si la journée est finie, juste avant le passage à demain.
+    if(!markerDone && dk === 1 && hasPastToday){ b.append(marker()); markerDone = true; }
     if(dk !== lastDay){
       const d = el("div","tl-div");
       d.append(el("div","tl-spine"), el("span",null, relday(new Date(e.at).toISOString())));
@@ -670,7 +677,8 @@ function timelineCard(){
     lastDay = dk;
     b.append(mkRow(e)); rows++;
   });
-  if(!markerDone && rows > 0) b.append(marker());
+  // Journée entièrement passée, rien demain : repère en fin de liste.
+  if(!markerDone && hasPastToday && !hasFutureToday) b.append(marker());
   if(!E.length) b.append(el("div","muted","Rien de prévu"));
   if(nextB){
     const p = el("div","s"); p.style.cssText = "border-top:1px solid var(--line);margin-top:6px;padding-top:6px;white-space:normal";
