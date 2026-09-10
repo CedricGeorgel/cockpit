@@ -251,7 +251,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.12";
+const COCKPIT_VERSION = "0.13";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -679,9 +679,9 @@ function weatherCard(){
   const top = el("div","w-top");
   top.append(el("div","w-ic",WSYM[w.symbol]||"☁️"));
   const info = el("div","main");
-  info.append(el("div","w-temp",w.temp+"°"),
-    el("div","s",`max ${w.tempMax}°  min ${w.tempMin}°  ·  ressenti ${w.feels}°`),
-    el("div","t",w.text));
+  const desc = el("div","t"); desc.textContent = w.summary || w.text;
+  desc.style.cssText = "white-space:normal;font-weight:500;color:var(--dim)";
+  info.append(el("div","w-temp",w.temp+"°"), desc);
   if(w.place) info.append(el("div","s","📍 "+w.place));
   top.append(info); b.append(top);
   if(w.advice){
@@ -695,7 +695,9 @@ function weatherCard(){
   if(w.aqiLabel) summary.push("air "+w.aqiLabel);
   const grid = el("div","w-grid"); grid.hidden = true;
   const gi = (l,v)=>{ const r=el("div","row"); r.append(el("div","main",l), el("div","r",v)); return r; };
-  grid.append(gi("Humidité",w.humidity+" %"), gi("Vent",w.wind+" km/h"), gi("Pluie",w.precipProb+" %"));
+  grid.append(gi("Températures",`max ${w.tempMax}°  ·  min ${w.tempMin}°`),
+              gi("Ressenti",w.feels+"°"),
+              gi("Humidité",w.humidity+" %"), gi("Vent",w.wind+" km/h"), gi("Pluie",w.precipProb+" %"));
   if(w.aqi!=null) grid.append(gi("Qualité air",`${w.aqi} · ${w.aqiLabel||""}`));
   if(w.pollen) grid.append(gi("Pollen",w.pollen));
   acc.append(el("span",null,summary.join(" · ")), (()=>{const s=el("span");s.textContent="▾";s.style.marginLeft="auto";return s;})());

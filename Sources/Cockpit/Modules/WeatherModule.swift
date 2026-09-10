@@ -13,7 +13,18 @@ struct WeatherSnapshot {
     var aqi: Int?
     var pm25: Double?
     var topPollen: (name: String, value: Double)?
-    var advice: String? = nil   // « prends un parapluie vers 17 h », « couvre-toi »…
+    var advice: String? = nil     // « prends un parapluie vers 17 h », « couvre-toi »…
+    var summary: String? = nil    // phrase : « Plutôt dégagé, ressenti 18°. Min 13° cette nuit. »
+}
+
+/// Description en une phrase, identique app + PWA.
+func wmoSummary(code: Int, temp: Int, feels: Int, tmax: Int, tmin: Int) -> String {
+    var s = wmoText(code)
+    if abs(feels - temp) >= 2 { s += ", ressenti \(feels)°" }
+    s += "."
+    if tmax - temp >= 3 { s += " Jusqu'à \(tmax)° plus tard." }
+    else if temp - tmin >= 4 { s += " Min \(tmin)° cette nuit." }
+    return s
 }
 
 final class WeatherModel: ObservableObject {
@@ -153,14 +164,20 @@ final class WeatherModel: ObservableObject {
             }
         }
 
+        let tMax = r.daily.temperature_2m_max.first ?? r.current.temperature_2m
+        let tMin = r.daily.temperature_2m_min.first ?? r.current.temperature_2m
+        let summary = wmoSummary(
+            code: r.current.weather_code, temp: Int(r.current.temperature_2m.rounded()),
+            feels: Int(r.current.apparent_temperature.rounded()),
+            tmax: Int(tMax.rounded()), tmin: Int(tMin.rounded()))
+
         return WeatherSnapshot(
             place: "", temp: r.current.temperature_2m, feels: r.current.apparent_temperature,
             code: r.current.weather_code, humidity: Int(r.current.relative_humidity_2m.rounded()),
             wind: r.current.wind_speed_10m,
-            tempMax: r.daily.temperature_2m_max.first ?? r.current.temperature_2m,
-            tempMin: r.daily.temperature_2m_min.first ?? r.current.temperature_2m,
+            tempMax: tMax, tempMin: tMin,
             precipProb: r.daily.precipitation_probability_max.first.flatMap { $0 } ?? 0,
-            aqi: nil, pm25: nil, topPollen: nil, advice: advice)
+            aqi: nil, pm25: nil, topPollen: nil, advice: advice, summary: summary)
     }
 
     private struct AirResult { let aqi: Int?; let pm25: Double?; let topPollen: (name: String, value: Double)? }
@@ -255,21 +272,14 @@ struct WeatherModule: View {
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(wmoColor(s.code))
                 .frame(width: 46)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text("\(Int(s.temp.rounded()))°")
-                        .font(.num(30, .semibold))
-                        .foregroundStyle(Theme.text)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("max \(Int(s.tempMax.rounded()))°  min \(Int(s.tempMin.rounded()))°")
-                            .font(.ui(10.5)).foregroundStyle(Theme.textDim)
-                        Text("ressenti \(Int(s.feels.rounded()))°")
-                            .font(.ui(10.5)).foregroundStyle(Theme.textFaint)
-                    }
-                }
-                Text(wmoText(s.code))
-                    .font(.ui(12, .medium))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(Int(s.temp.rounded()))°")
+                    .font(.num(30, .semibold))
+                    .foregroundStyle(Theme.text)
+                Text(s.summary ?? wmoText(s.code))
+                    .font(.ui(11.5, .medium))
                     .foregroundStyle(Theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button {
                     draft = model.place; editingPlace = true
                 } label: {
@@ -338,6 +348,8 @@ struct WeatherModule: View {
 
     private func grid(_ s: WeatherSnapshot) -> some View {
         let items: [(String, String, String)] = [
+            ("temp", "Températures", "max \(Int(s.tempMax.rounded()))°  ·  min \(Int(s.tempMin.rounded()))°"),
+            ("feels", "Ressenti", "\(Int(s.feels.rounded()))°"),
             ("humidity", "Humidité", "\(s.humidity) %"),
             ("wind", "Vent", "\(Int(s.wind.rounded())) km/h"),
             ("umbrella", "Pluie", "\(s.precipProb) %"),
@@ -365,6 +377,8 @@ struct WeatherModule: View {
 
     private func sfFor(_ k: String) -> String {
         switch k {
+        case "temp": return "thermometer.medium"
+        case "feels": return "thermometer.variable.and.figure"
         case "humidity": return "humidity.fill"
         case "wind": return "wind"
         case "umbrella": return "umbrella.fill"
