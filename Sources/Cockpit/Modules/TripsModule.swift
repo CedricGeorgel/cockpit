@@ -55,6 +55,8 @@ enum TripsDigest {
         "coiffeur", "resto", "restaurant", "entretien", "cours ", " sport", "seance", "atelier",
         "formation", "livraison", "shooting", "tournage", "demenagement", " menage", "reparation",
         "signature", "notaire", " banque", "assurance", " mairie", "prefecture",
+        "gobelins", "campus", "amphi", "(salle", "conference", "conferences", "rentree",
+        "promo ", "td ", "tp ", " cm ", "workshop", "jury", "soutenance", "partiel",
     ]
 
     private static let cities: Set<String> = [
@@ -121,6 +123,9 @@ enum TripsDigest {
     /// pas de mot de liaison, et pour le tiret il faut une ville connue.
     private static func looksLikeRoute(_ title: String) -> Bool {
         let t = title.trimmingCharacters(in: .whitespaces)
+        // Une vraie destination ne contient ni parenthèse (« (salle 310) », « (groupe B) »)
+        // ni « / » (« Cours / Atelier », « MDPSN / Rentrée »).
+        if t.contains("(") || t.contains(" / ") || t.contains("/") { return false }
         let arrows = [" → ", " -> ", " > "]
         let dashes = [" - ", " – ", " — "]
         let sep = arrows.first(where: t.contains) ?? dashes.first(where: t.contains)
