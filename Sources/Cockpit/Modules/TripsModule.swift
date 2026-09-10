@@ -32,27 +32,48 @@ enum TripsDigest {
         return now > end.addingTimeInterval(60) ? .done : .inTransit
     }
 
+    // Termes forts : peu de risque de faux positif dans un titre d'évènement.
     private static let trainTerms = [
-        "gare", "tgv", "ouigo", "inoui", "sncf", "train", "eurostar", "thalys", "ter ",
-        "intercités", "lyria", "renfe", "trenitalia", "trainline", "db ", "ice ", "railjet",
-        "gare de l'est", "gare du nord", "gare de lyon", "montparnasse", "saint-lazare",
-        "austerlitz", "part-dieu", "matabiau", "perrache", "guillemins", "flixtrain",
+        "tgv", "ouigo", "inoui", "sncf", "eurostar", "thalys", "lyria", "renfe",
+        "trenitalia", "trainline", "railjet", "flixtrain", "intercités", "intercite",
+        "billet train", "gare de l'est", "gare du nord", "gare de lyon", "gare montparnasse",
+        "gare saint-lazane", "gare d'austerlitz", "gare part-dieu", "gare matabiau",
     ]
-    private static let flightTerms = ["vol ", "flight", "aéroport", "airport", "boarding",
-                                      "embarquement", "easyjet", "ryanair", "air france", "klm",
+    private static let flightTerms = ["vol ", "flight ", "boarding pass", "carte d'embarquement",
+                                      "en avion", "easyjet", "ryanair", "air france", " klm ",
                                       "lufthansa", "transavia", "vueling", "wizz air", "volotea",
-                                      "porte d'embarquement", "gate ", "terminal "]
-    private static let boatTerms = ["ferry", "traversée", "corsica", "brittany ferries", "dfds",
-                                    "la méridionale", "port de", "embarcadère", "navire"]
-    private static let busTerms = ["flixbus", "blablacar bus", "blablabus", "car ", "autocar", "gare routière"]
+                                      "porte d'embarquement"]
+    private static let boatTerms = ["ferry", "traversée", "corsica linea", "corsica ferries",
+                                    "brittany ferries", " dfds ", "la méridionale", "embarcadère"]
+    private static let busTerms = ["flixbus", "blablacar bus", "blablabus", "autocar", "gare routière"]
+
+    /// Ce qui, dans un titre, indique clairement autre chose qu'un déplacement.
+    private static let notTrip = [
+        "rdv", "rendez-vous", "reunion", "meeting", "call ", "visio", "point ", "appel ",
+        "dejeuner", "dej ", "diner", "brunch", "cafe ", "apero", "gouter",
+        "anniversaire", "anniv", "dentiste", "medecin", "docteur", " kine", " osteo", " psy",
+        "coiffeur", "resto", "restaurant", "entretien", "cours ", " sport", "seance", "atelier",
+        "formation", "livraison", "shooting", "tournage", "demenagement", " menage", "reparation",
+        "signature", "notaire", " banque", "assurance", " mairie", "prefecture",
+    ]
+
+    private static let cities: Set<String> = [
+        "paris", "lyon", "marseille", "lille", "strasbourg", "bordeaux", "toulouse", "nantes",
+        "nice", "rennes", "montpellier", "grenoble", "dijon", "reims", "metz", "nancy", "mulhouse",
+        "tours", "angers", "brest", "havre", "rouen", "caen", "orleans", "clermont", "amiens",
+        "besancon", "avignon", "aix", "cannes", "perpignan", "poitiers", "limoges", "colmar",
+        "bruxelles", "londres", "geneve", "luxembourg", "francfort", "amsterdam", "barcelone",
+        "madrid", "milan", "turin", "berlin", "cologne", "zurich", "bale",
+    ]
 
     static func compute(_ events: [AgendaItem], mails: [MailModel.Mail] = [], now: Date = Date()) -> [Trip] {
         let horizon = now.addingTimeInterval(6 * 86_400)
         var trips = events.compactMap { e -> Trip? in
             guard let start = e.start, start < horizon,
                   start > now.addingTimeInterval(-18 * 3600), !e.allDay else { return nil }
-            let hay = (e.title + " " + (e.location ?? "")).folding(options: .diacriticInsensitive, locale: nil).lowercased()
-            guard let mode = detect(hay, title: e.title) else { return nil }
+            // On ne détecte QUE sur le titre : l'adresse d'un RDV contient
+            // souvent « gare », « avenue », etc. et créait de faux trajets.
+            guard let mode = detect(title: e.title) else { return nil }
             return Trip(id: e.id, title: e.title, origin: originGuess(e),
                         departure: start, arrival: e.end, mode: mode)
         }
@@ -66,7 +87,7 @@ enum TripsDigest {
             let hay = (m.subject + " " + m.fromName + " " + m.fromAddress)
                 .folding(options: .diacriticInsensitive, locale: nil).lowercased()
             guard bookingCues.contains(where: hay.contains),
-                  let mode = detect(hay, title: m.subject) else { continue }
+                  let mode = detect(title: m.subject + " " + m.fromName) else { continue }
             // déjà couvert par un évènement agenda ?
             if trips.contains(where: { abs(($0.receivedAt ?? .distantPast).timeIntervalSince(m.date)) < 86_400 }) { continue }
             trips.append(Trip(id: "mail-\(m.id)", title: m.subject, origin: "",
@@ -82,27 +103,54 @@ enum TripsDigest {
             }
     }
 
-    private static func detect(_ hay: String, title: String) -> Trip.Mode? {
-        if flightTerms.contains(where: hay.contains)      { return .flight }
-        if boatTerms.contains(where: hay.contains)        { return .boat }
-        if busTerms.contains(where: hay.contains)         { return .bus }
-        if trainTerms.contains(where: hay.contains)       { return .train }
-        if looksLikeRoute(title)                          { return .train }
+    private static func detect(title raw: String) -> Trip.Mode? {
+        let t = raw.folding(options: .diacriticInsensitive, locale: nil).lowercased()
+        if notTrip.contains(where: t.contains) { return nil }
+        if flightTerms.contains(where: t.contains) { return .flight }
+        if boatTerms.contains(where: t.contains)   { return .boat }
+        if busTerms.contains(where: t.contains)    { return .bus }
+        if trainTerms.contains(where: t.contains)  { return .train }
+        // « train » / « gare » seuls : seulement s'ils sont vraiment dans le titre
+        if t.range(of: #"\b(train|gare|aeroport)\b"#, options: .regularExpression) != nil,
+           looksLikeRoute(raw) { return t.contains("aeroport") ? .flight : .train }
+        if looksLikeRoute(raw) { return .train }
         return nil
     }
 
-    /// « Strasbourg - Paris Gare de l'Est », « Lyon → Marseille »…
+    /// « Strasbourg → Paris », « Lyon - Marseille ». Strict : deux lieux courts,
+    /// pas de mot de liaison, et pour le tiret il faut une ville connue.
     private static func looksLikeRoute(_ title: String) -> Bool {
-        let separators = [" - ", " – ", " → ", " > ", " / ", " vers ", " to "]
-        guard let sep = separators.first(where: title.contains) else { return false }
-        let parts = title.components(separatedBy: sep)
-        guard parts.count == 2 else { return false }
-        // deux segments courts, plutôt des lieux
-        return parts.allSatisfy { $0.split(separator: " ").count <= 5 && !$0.isEmpty }
+        let t = title.trimmingCharacters(in: .whitespaces)
+        let arrows = [" → ", " -> ", " > "]
+        let dashes = [" - ", " – ", " — "]
+        let sep = arrows.first(where: t.contains) ?? dashes.first(where: t.contains)
+        guard let sep else { return false }
+        let parts = t.components(separatedBy: sep).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, parts.allSatisfy({ !$0.isEmpty }) else { return false }
+
+        let stop: Set<String> = ["le", "la", "les", "chez", "avec", "et", "pour", "salle",
+                                 "bureau", "room", "zoom", "teams", "meet", "part", "partie",
+                                 "acte", "ep", "épisode", "vs", "contre"]
+        for p in parts {
+            let words = p.folding(options: .diacriticInsensitive, locale: nil)
+                .lowercased().split(separator: " ").map(String.init)
+            guard (1...4).contains(words.count) else { return false }
+            if words.contains(where: stop.contains) { return false }
+            // premier mot doit commencer par une majuscule dans l'original
+            guard p.first?.isUppercase == true || p.first?.isNumber == true else { return false }
+        }
+        // Avec un tiret (très courant dans les titres), on exige une ville connue.
+        if arrows.first(where: t.contains) == nil {
+            let allWords = parts.flatMap {
+                $0.folding(options: .diacriticInsensitive, locale: nil).lowercased().split(separator: " ").map(String.init)
+            }
+            return allWords.contains { cities.contains($0) }
+        }
+        return true
     }
 
     private static func originGuess(_ e: AgendaItem) -> String {
-        for sep in [" - ", " – ", " → ", " > ", " vers ", " to "] {
+        for sep in [" → ", " -> ", " > ", " - ", " – ", " — "] {
             if let r = e.title.range(of: sep) {
                 return String(e.title[..<r.lowerBound]).trimmingCharacters(in: .whitespaces)
             }
