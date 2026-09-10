@@ -153,6 +153,14 @@
   #setup .actions{display:flex;gap:8px;margin-top:auto;padding-top:14px}
   #setup .actions button{flex:1;padding:12px;border-radius:10px;font-weight:600;background:var(--card);border:1px solid var(--line)}
   #setup .actions .go{background:var(--accent);color:var(--onAccent);border-color:transparent}
+  .fleet-row{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--card);
+    border:1px solid var(--line);border-radius:9px;margin-bottom:6px}
+  .fleet-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .fleet-name{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fleet-when{font-size:10px;color:var(--faint)}
+  .fleet-x{padding:7px 10px;border-radius:8px;background:transparent;border:1px solid var(--line);
+    color:var(--warn);font-size:12px;font-weight:600;flex:none}
+  .fleet-x:disabled{opacity:.5}
   .theme-seg{display:flex;gap:6px}
   .theme-seg button{flex:1;padding:9px;border-radius:9px;background:var(--card);
     border:1px solid var(--line);font-size:12px;color:var(--dim)}
@@ -191,6 +199,12 @@
       <button id="btn-google" class="go">Se connecter avec Google</button>
     </div>
     <p class="hint" id="setup-who" hidden></p>
+
+    <div id="fleet-box" hidden>
+      <label>Appareils connectés</label>
+      <div id="fleet-list"></div>
+      <p class="hint">Déconnecter un appareil retire son instantané du serveur. Il se reconnectera de lui-même s'il tourne encore.</p>
+    </div>
 
     <div>
       <label>Thème</label>
@@ -251,7 +265,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.15";
+const COCKPIT_VERSION = "0.16";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -416,6 +430,13 @@ function pendingFor(kind, matchArg){
 
 // ---- format --------------------------------------------------------------
 const fmtTime = d => d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+const fmtAgo = d => {
+  const s = (Date.now() - d) / 1000;
+  if(!isFinite(s) || s < 90) return "à l'instant";
+  if(s < 5400)   return "il y a " + Math.round(s/60) + " min";
+  if(s < 172800) return "il y a " + Math.round(s/3600) + " h";
+  return "il y a " + Math.round(s/86400) + " j";
+};
 function relday(iso){
   if(!iso) return "";
   const d = new Date(iso), now = new Date();
@@ -927,7 +948,39 @@ function openSetup(){
     $("#btn-google").textContent = "Se connecter avec Google";
   }
   syncThemeSeg();
+  if(conf) renderFleet(); else $("#fleet-box").hidden = true;
   $("#setup").classList.add("show");
+}
+
+async function renderFleet(){
+  const box = $("#fleet-box"), list = $("#fleet-list");
+  box.hidden = true; list.innerHTML = "";
+  let devs = [];
+  try{ const fl = await apiGet("fleet"); devs = (fl && fl.devices) || []; }catch(e){ return; }
+  if(!devs.length) return;
+  devs.sort((a,b)=> new Date(b.generatedAt) - new Date(a.generatedAt));
+  for(const d of devs){
+    const row = el("div","fleet-row");
+    const info = el("div","fleet-info");
+    info.append(el("span","fleet-name", d.device || "Mac"));
+    info.append(el("span","fleet-when", d.generatedAt ? "vu " + fmtAgo(new Date(d.generatedAt)) : ""));
+    const btn = el("button","fleet-x","Déconnecter");
+    if(!d.deviceId){ btn.disabled = true; btn.title = "identifiant manquant"; }
+    btn.onclick = async ()=>{
+      btn.disabled = true; btn.textContent = "…";
+      try{
+        const r = await fetch(apiURL("device") + "&d=" + encodeURIComponent(d.deviceId) + "&forget=1",
+                              { method:"POST", headers: authHeaders() });
+        if(!r.ok && r.status !== 204) throw 0;
+        row.remove();
+        if(!list.children.length) box.hidden = true;
+        refresh();
+      }catch(_){ btn.disabled = false; btn.textContent = "Déconnecter"; }
+    };
+    row.append(info, btn);
+    list.append(row);
+  }
+  box.hidden = false;
 }
 function closeSetup(){ if(isConfigured()) $("#setup").classList.remove("show"); }
 $("#gearBtn").onclick = openSetup;

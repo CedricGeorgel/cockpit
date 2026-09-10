@@ -269,6 +269,38 @@ final class RemoteBridge {
 
     func syncNow() { schedulePush(delay: 0); pollCommands(); pullSettings(); pullFleet() }
 
+    /// Retire l'instantané d'un autre appareil du serveur. S'il tourne encore,
+    /// il se re-signalera au prochain push : c'est surtout utile pour un Mac
+    /// éteint / mis de côté dont on ne veut plus voir les données.
+    func forgetDevice(_ id: String, completion: ((Bool) -> Void)? = nil) {
+        guard id != deviceID, !id.isEmpty, var c = base else { completion?(false); return }
+        var items = c.queryItems ?? []
+        items.removeAll { ["f", "i", "d", "auth"].contains($0.name) }
+        items.append(URLQueryItem(name: "f", value: "device"))
+        items.append(URLQueryItem(name: "d", value: id))
+        items.append(URLQueryItem(name: "forget", value: "1"))
+        if !instance.isEmpty { items.append(URLQueryItem(name: "i", value: instance)) }
+        c.queryItems = items
+        guard let url = c.url else { completion?(false); return }
+        var r = URLRequest(url: url)
+        r.httpMethod = "POST"
+        r.timeoutInterval = 20
+        if !token.isEmpty {
+            r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            r.setValue(token, forHTTPHeaderField: "X-Auth-Token")
+        }
+        URLSession.shared.dataTask(with: r) { _, resp, _ in
+            let ok = (resp as? HTTPURLResponse).map { (200...299).contains($0.statusCode) } ?? false
+            DispatchQueue.main.async {
+                if ok {
+                    self.fleet.removeAll { $0.deviceId == id }
+                    NotificationCenter.default.post(name: .cockpitFleetUpdated, object: nil)
+                }
+                completion?(ok)
+            }
+        }.resume()
+    }
+
     // MARK: HTTP
 
     private func request(_ f: String, method: String, body: Data? = nil) -> URLRequest? {

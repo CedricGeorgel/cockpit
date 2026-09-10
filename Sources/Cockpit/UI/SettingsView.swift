@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Fenêtre Réglages (⌘,). Regroupe ce qui était éparpillé dans les menus.
 struct SettingsView: View {
@@ -11,6 +12,10 @@ struct SettingsView: View {
     @AppStorage("cockpit.notif.mail") private var notifMail = true
 
     @State private var account = RemoteBridge.shared.accountEmail
+    @State private var devices: [RemoteBridge.FleetDevice] = RemoteBridge.shared.fleet
+    @State private var forgetting: Set<String> = []
+
+    private func refreshDevices() { devices = RemoteBridge.shared.fleet }
 
     var body: some View {
         Form {
@@ -59,6 +64,33 @@ struct SettingsView: View {
                 }
             }
 
+            if !account.isEmpty && !devices.isEmpty {
+                Section("Appareils connectés") {
+                    ForEach(devices) { d in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(d.name + (d.isSelf ? " (celui-ci)" : ""))
+                                Text("vu \(d.pushedAt.formatted(.relative(presentation: .named)))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if !d.isSelf {
+                                Button("Déconnecter", role: .destructive) {
+                                    forgetting.insert(d.deviceId)
+                                    RemoteBridge.shared.forgetDevice(d.deviceId) { _ in
+                                        forgetting.remove(d.deviceId)
+                                        refreshDevices()
+                                    }
+                                }
+                                .disabled(forgetting.contains(d.deviceId))
+                            }
+                        }
+                    }
+                    Text("Retire l'instantané de cet appareil du serveur. S'il tourne encore, il réapparaîtra à sa prochaine synchro.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             Section("Prisme") {
                 if PrismeAPI.isAvailable {
                     LabeledContent("Installé", value: PrismeAPI.installedVersion ?? "?")
@@ -70,5 +102,12 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420, height: 460)
+        .onAppear {
+            refreshDevices()
+            if !account.isEmpty { RemoteBridge.shared.syncNow() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cockpitFleetUpdated)) { _ in
+            refreshDevices()
+        }
     }
 }

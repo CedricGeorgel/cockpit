@@ -379,6 +379,12 @@ if (($f === 'fleet' || $f === 'fleet_compat') && $method === 'GET') {
 // --- écriture de l'état d'un appareil ---
 if ($f === 'device') {
     if (!preg_match('/^[a-f0-9]{8,32}$/', $d)) out(['error' => 'appareil invalide'], 400);
+    // Oubli d'un appareil : DELETE, ou POST ?forget=1 (hôtes qui bloquent DELETE).
+    if ($method === 'DELETE' || ($method === 'POST' && isset($_GET['forget']))) {
+        @unlink($idir . '/dev.' . $d . '.json');
+        http_response_code(204);
+        exit;
+    }
     if ($method !== 'POST' && $method !== 'PUT') out(['error' => 'POST requis'], 405);
     write_json($idir . '/dev.' . $d . '.json');
 }
