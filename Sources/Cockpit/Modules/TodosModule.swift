@@ -19,10 +19,105 @@ final class TodosModel: ObservableObject {
 
     func start() {
         store.requestFullAccessToReminders { [weak self] ok, _ in
-            DispatchQueue.main.async { self?.granted = ok; self?.reload() }
+            DispatchQueue.main.async {
+                self?.granted = ok
+                if ok { self?.seedRulesIfNeeded() }
+                self?.reload()
+            }
         }
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: store,
                                                queue: .main) { [weak self] _ in self?.reload() }
+    }
+
+    // MARK: - Classement automatique dans une liste Rappels
+
+    /// `[calendarIdentifier: mots-clés]`. Édité par l'utilisateur (`RemindersRulesEditor`),
+    /// gardé en local (les listes Rappels sont propres à ce Mac).
+    @Published var rules: [String: [String]] = TodosModel.loadRules()
+    private static let rulesKey = "cockpit.reminders.rules.v1"
+
+    private static func loadRules() -> [String: [String]] {
+        (UserDefaults.standard.dictionary(forKey: rulesKey) as? [String: [String]]) ?? [:]
+    }
+
+    func setRules(_ r: [String: [String]]) {
+        var clean: [String: [String]] = [:]
+        for (id, words) in r {
+            var seen = Set<String>()
+            let w = words.map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            if !w.isEmpty { clean[id] = w }
+        }
+        rules = clean
+        UserDefaults.standard.set(clean, forKey: Self.rulesKey)
+        NotificationCenter.default.post(name: .cockpitLocalSettingChanged, object: nil)
+    }
+
+    func toggleRule(_ calendarId: String, _ word: String) {
+        var r = rules
+        var words = r[calendarId] ?? []
+        if let i = words.firstIndex(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) {
+            words.remove(at: i)
+        } else {
+            words.append(word)
+        }
+        r[calendarId] = words
+        setRules(r)
+    }
+
+    var reminderCalendars: [EKCalendar] {
+        store.calendars(for: .reminder).filter(\.allowsContentModifications)
+    }
+    var defaultCalendarName: String {
+        store.defaultCalendarForNewReminders()?.title ?? "la liste par défaut"
+    }
+
+    /// Suggestions de démarrage : rapprochées du **nom** de la liste (les identifiants
+    /// ne sont connus qu'à l'exécution). Ne s'applique que si aucune règle n'existe
+    /// encore — ensuite tout passe par l'éditeur, y compris pour des listes au nom
+    /// qu'on ne peut pas deviner (ex. un surnom).
+    private static let titleHints: [(match: String, keywords: [String])] = [
+        ("sante",    ["rdv", "medecin", "docteur", "dentiste", "kine", "osteo", "psy",
+                       "pharmacie", "ordonnance", "vaccin", "analyses"]),
+        ("maison",   ["menage", "courses", "plomberie", "electricite", "loyer", "syndic",
+                       "bricolage", "linge", "poubelles", "chauffage"]),
+        ("voyage",   ["billet", "valise", "passeport", "hotel", "vol", "train", "visa",
+                       "reservation", "itineraire"]),
+        ("busines",  ["facture", "devis", "client", "contrat", "relance", "comptable",
+                       "tva", "fournisseur", "invoice"]),
+        ("animau",   ["veterinaire", "croquettes", "toilettage", "puces", "laisse", "pension"]),
+        ("relation", ["anniversaire", "appeler", "cadeau", "diner", "visite", "famille"]),
+        ("veille",   ["veille", "inspiration", "portfolio", "figma", "dribbble", "behance",
+                       "typo", "tendance"]),
+    ]
+
+    private func seedRulesIfNeeded() {
+        guard rules.isEmpty else { return }
+        var seeded: [String: [String]] = [:]
+        for c in reminderCalendars {
+            let t = c.title.folding(options: .diacriticInsensitive, locale: nil).lowercased()
+            if let hint = Self.titleHints.first(where: { t.contains($0.match) }) {
+                seeded[c.calendarIdentifier] = hint.keywords
+            }
+        }
+        guard !seeded.isEmpty else { return }
+        setRules(seeded)
+    }
+
+    /// Première liste dont un mot-clé apparaît dans le titre du rappel (après
+    /// retrait de la partie « date » par `DatePhrase`). Sinon la liste par défaut.
+    private func bestCalendar(for title: String, fallback: EKCalendar) -> EKCalendar {
+        let t = title.folding(options: .diacriticInsensitive, locale: nil).lowercased()
+        guard !t.isEmpty else { return fallback }
+        for cal in reminderCalendars {
+            guard let words = rules[cal.calendarIdentifier], !words.isEmpty else { continue }
+            let hit = words.contains { w in
+                let k = w.folding(options: .diacriticInsensitive, locale: nil).lowercased()
+                return !k.isEmpty && t.contains(k)
+            }
+            if hit { return cal }
+        }
+        return fallback
     }
 
     func reload() {
@@ -63,12 +158,12 @@ final class TodosModel: ObservableObject {
     /// « payer le loyer lundi », « dans 2h relancer »… Sinon échéance aujourd'hui.
     func addReminder(_ title: String) {
         let raw = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard granted, !raw.isEmpty, let calendar = store.defaultCalendarForNewReminders() else { return }
+        guard granted, !raw.isEmpty, let defaultCalendar = store.defaultCalendarForNewReminders() else { return }
         let p = DatePhrase.parse(raw)
         let cal = Calendar.current
         let r = EKReminder(eventStore: store)
         r.title = p.title
-        r.calendar = calendar
+        r.calendar = bestCalendar(for: p.title, fallback: defaultCalendar)
         let due = p.due ?? Date()
         r.dueDateComponents = p.timed
             ? cal.dateComponents([.year, .month, .day, .hour, .minute], from: due)
@@ -97,6 +192,7 @@ final class TodosModel: ObservableObject {
 struct TodosModule: View {
     @ObservedObject var model: TodosModel
     @State private var newReminder = ""
+    @State private var showRules = false
     @FocusState private var addFocused: Bool
 
     var body: some View {
@@ -138,6 +234,13 @@ struct TodosModule: View {
                 Button("Ajouter", action: submit)
                     .buttonStyle(.plain).font(.ui(10, .semibold)).foregroundStyle(Theme.accent)
             }
+            Button { showRules = true } label: {
+                Image(systemName: "tag").font(.system(size: 10.5))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(model.rules.isEmpty ? Theme.textFaint : Theme.accent)
+            .help("Classement automatique des rappels")
+            .popover(isPresented: $showRules) { RemindersRulesEditor(model: model) }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
@@ -168,5 +271,79 @@ struct TodosModule: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 3)
+    }
+}
+
+/// Éditeur du classement automatique : un rappel ajouté depuis Cockpit part
+/// dans la première liste Rappels dont un mot-clé apparaît dans son texte.
+private struct RemindersRulesEditor: View {
+    @ObservedObject var model: TodosModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var custom: [String: String] = [:]   // calendarIdentifier → texte en cours
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Classement automatique")
+            Text("Un rappel ajouté depuis Cockpit part dans la 1ʳᵉ liste ci-dessous dont un mot apparaît dans son texte. Sinon : \(model.defaultCalendarName).")
+                .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(model.reminderCalendars, id: \.calendarIdentifier) { cal in
+                        listSection(cal)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(width: 300, height: 300)
+
+            HStack {
+                Spacer()
+                Button("Fermer") { dismiss() }.buttonStyle(GhostButtonStyle(prominent: true))
+            }
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private func listSection(_ cal: EKCalendar) -> some View {
+        let id = cal.calendarIdentifier
+        let words = model.rules[id] ?? []
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Circle().fill(Color(nsColor: cal.color ?? .systemGray)).frame(width: 7, height: 7)
+                Text(cal.title).font(.ui(9.5, .semibold)).foregroundStyle(Theme.textDim)
+            }
+            if !words.isEmpty {
+                FlowLayout(spacing: 5) {
+                    ForEach(words, id: \.self) { w in
+                        Button { model.toggleRule(id, w) } label: {
+                            Text(w).font(.ui(10))
+                                .padding(.horizontal, 7).padding(.vertical, 2)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Theme.accent.opacity(0.18)))
+                                .foregroundStyle(Theme.text)
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+            HStack(spacing: 6) {
+                TextField("mot-clé…", text: Binding(
+                    get: { custom[id] ?? "" },
+                    set: { custom[id] = $0 }))
+                    .textFieldStyle(.roundedBorder).font(.ui(10.5))
+                    .onSubmit { addCustom(id) }
+                Button("Ajouter") { addCustom(id) }
+                    .buttonStyle(GhostButtonStyle())
+                    .disabled((custom[id] ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+    }
+
+    private func addCustom(_ id: String) {
+        let w = (custom[id] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !w.isEmpty else { return }
+        model.toggleRule(id, w)
+        custom[id] = ""
     }
 }
