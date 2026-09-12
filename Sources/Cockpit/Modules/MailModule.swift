@@ -107,6 +107,44 @@ final class MailModel: ObservableObject {
         }
     }
 
+    /// Mots qui annulent un mot-clé suivi quand le mail est structurellement une
+    /// newsletter (en-tête List-Unsubscribe/List-Id/Precedence, cf. `isBulk`).
+    /// Ne s'applique donc jamais à un vrai mail 1-à-1 : au pire on revient au
+    /// comportement « avant mot-clé », jamais un mail qui n'était pas déjà écarté.
+    @Published var excludes: [String] = MailModel.loadExcludes()
+    private static let excludesKey = "cockpit.mail.excludes"
+    static func loadExcludes() -> [String] {
+        if let saved = UserDefaults.standard.array(forKey: excludesKey) as? [String] { return saved }
+        // Jamais configuré : on part avec le vocabulaire publicitaire courant.
+        return suggestedExcludes.flatMap { $0.1 }
+    }
+    func setExcludes(_ list: [String]) {
+        var seen = Set<String>()
+        let clean = list.map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        excludes = clean
+        UserDefaults.standard.set(clean, forKey: Self.excludesKey)
+        NotificationCenter.default.post(name: .cockpitLocalSettingChanged, object: nil)
+        refreshAll()
+    }
+    func toggleExclude(_ k: String) {
+        if let i = excludes.firstIndex(where: { $0.caseInsensitiveCompare(k) == .orderedSame }) {
+            var l = excludes; l.remove(at: i); setExcludes(l)
+        } else {
+            setExcludes(excludes + [k])
+        }
+    }
+
+    /// Vocabulaire publicitaire type (sujet), jamais présent dans un mail 1-à-1.
+    static let suggestedExcludes: [(String, [String])] = [
+        ("Promotions", [
+            "offre spéciale", "offre exclusive", "promo", "code promo", "soldes",
+            "vente flash", "black friday", "cyber monday", "french days",
+            "% de réduction", "jusqu'à -", "livraison offerte", "derniers jours pour",
+            "profitez-en", "ne manquez pas", "essai gratuit", "en exclusivité",
+        ]),
+    ]
+
     /// Propositions prêtes à cocher : mots qui, dans un sujet ou un expéditeur,
     /// annoncent presque toujours un message à ne pas rater.
     static let suggestedKeywords: [(String, [String])] = [
@@ -146,8 +184,12 @@ final class MailModel: ObservableObject {
         NotificationCenter.default.addObserver(
             forName: .cockpitSettingsImported, object: nil, queue: .main
         ) { [weak self] _ in
-            let fresh = MailModel.loadKeywords()
-            if fresh != self?.keywords { self?.keywords = fresh; self?.refreshAll() }
+            guard let self else { return }
+            let freshK = MailModel.loadKeywords()
+            let freshE = MailModel.loadExcludes()
+            if freshK != self.keywords || freshE != self.excludes {
+                self.keywords = freshK; self.excludes = freshE; self.refreshAll()
+            }
         }
     }
 
@@ -310,14 +352,20 @@ final class MailModel: ObservableObject {
         var mails: [Mail] = []
         var otherUnread = 0
         let keywords = loadKeywords().map { $0.folding(options: .diacriticInsensitive, locale: nil).lowercased() }
+        let excludes = loadExcludes().map { $0.folding(options: .diacriticInsensitive, locale: nil).lowercased() }
         for m in fetch.messages {
             let email = m.fromAddress.lowercased()
             let hay = (m.subject + " " + m.fromName + " " + email)
                 .folding(options: .diacriticInsensitive, locale: nil).lowercased()
             let reason: Reason?
             // Signalé ou mot-clé suivi : passe toujours, même si c'est une « liste ».
+            // Sauf si le mail est structurellement une newsletter (isBulk) ET contient
+            // un mot d'exclusion (vocabulaire publicitaire) : là, le mot-clé ne force
+            // plus le passage — on retombe sur le filtre newsletter normal.
+            let keywordHit = keywords.contains(where: hay.contains)
+            let excludedAsAd = m.isBulk && excludes.contains(where: hay.contains)
             if m.flagged { reason = .flagged }
-            else if keywords.contains(where: hay.contains) { reason = .keyword }
+            else if keywordHit && !excludedAsAd { reason = .keyword }
             else if m.isBulk { continue }
             else if isWorkRelated(m) { reason = .work }
             else if contacts.contains(email) { reason = .contact }
@@ -639,40 +687,66 @@ private struct KeywordEditor: View {
     @ObservedObject var model: MailModel
     @Environment(\.dismiss) private var dismiss
     @State private var custom = ""
+    @State private var tab = 0   // 0 = suivis, 1 = exclusions
 
     private func has(_ k: String) -> Bool {
         model.keywords.contains { $0.caseInsensitiveCompare(k) == .orderedSame }
     }
+    private func hasExclude(_ k: String) -> Bool {
+        model.excludes.contains { $0.caseInsensitiveCompare(k) == .orderedSame }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: "Mots-clés importants")
-            Text("Un mail dont le sujet ou l'expéditeur contient l'un de ces mots passe en important, même s'il ressemble à une newsletter.")
-                .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
-                .fixedSize(horizontal: false, vertical: true)
+            Picker("", selection: $tab) {
+                Text("Mots suivis").tag(0)
+                Text("Exclusions").tag(1)
+            }
+            .pickerStyle(.segmented).labelsHidden()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 9) {
-                    // Ceux ajoutés à la main qui ne sont pas dans les propositions.
-                    let suggested = Set(MailModel.suggestedKeywords.flatMap { $0.1 }.map { $0.lowercased() })
-                    let mine = model.keywords.filter { !suggested.contains($0.lowercased()) }
-                    if !mine.isEmpty { chipGroup("Les tiens", mine) }
-                    ForEach(MailModel.suggestedKeywords, id: \.0) { section in
-                        chipGroup(section.0, section.1)
+            if tab == 0 {
+                SectionLabel(text: "Mots-clés importants")
+                Text("Un mail dont le sujet ou l'expéditeur contient l'un de ces mots passe en important, même s'il ressemble à une newsletter.")
+                    .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 9) {
+                        // Ceux ajoutés à la main qui ne sont pas dans les propositions.
+                        let suggested = Set(MailModel.suggestedKeywords.flatMap { $0.1 }.map { $0.lowercased() })
+                        let mine = model.keywords.filter { !suggested.contains($0.lowercased()) }
+                        if !mine.isEmpty { chipGroup("Les tiens", mine, isOn: has, toggle: model.toggleKeyword) }
+                        ForEach(MailModel.suggestedKeywords, id: \.0) { section in
+                            chipGroup(section.0, section.1, isOn: has, toggle: model.toggleKeyword)
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
-            }
-            .frame(width: 300, height: 260)
+                .frame(width: 300, height: 220)
 
-            HStack(spacing: 6) {
-                TextField("ajouter un mot…", text: $custom)
-                    .textFieldStyle(.roundedBorder).font(.ui(11))
-                    .onSubmit { addCustom() }
-                Button("Ajouter") { addCustom() }
-                    .buttonStyle(GhostButtonStyle())
-                    .disabled(custom.trimmingCharacters(in: .whitespaces).isEmpty)
+                addField(placeholder: "ajouter un mot…") { model.toggleKeyword($0) }
+            } else {
+                SectionLabel(text: "Mots qui annulent")
+                Text("Si un mail « suivi » ci-contre a aussi un en-tête de newsletter (lien de désinscription) ET l'un de ces mots, il n'est plus considéré comme important — sinon le tri newsletter s'applique normalement.")
+                    .font(.ui(9.5)).foregroundStyle(Theme.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 9) {
+                        let suggested = Set(MailModel.suggestedExcludes.flatMap { $0.1 }.map { $0.lowercased() })
+                        let mine = model.excludes.filter { !suggested.contains($0.lowercased()) }
+                        if !mine.isEmpty { chipGroup("Les tiens", mine, isOn: hasExclude, toggle: model.toggleExclude) }
+                        ForEach(MailModel.suggestedExcludes, id: \.0) { section in
+                            chipGroup(section.0, section.1, isOn: hasExclude, toggle: model.toggleExclude)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(width: 300, height: 220)
+
+                addField(placeholder: "ajouter une expression…") { model.toggleExclude($0) }
             }
+
             HStack {
                 Spacer()
                 Button("Fermer") { dismiss() }.buttonStyle(GhostButtonStyle(prominent: true))
@@ -681,19 +755,31 @@ private struct KeywordEditor: View {
         .padding(12)
     }
 
-    private func addCustom() {
+    private func addField(placeholder: String, add: @escaping (String) -> Void) -> some View {
+        HStack(spacing: 6) {
+            TextField(placeholder, text: $custom)
+                .textFieldStyle(.roundedBorder).font(.ui(11))
+                .onSubmit { addCustom(add) }
+            Button("Ajouter") { addCustom(add) }
+                .buttonStyle(GhostButtonStyle())
+                .disabled(custom.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+    }
+
+    private func addCustom(_ add: (String) -> Void) {
         let k = custom.trimmingCharacters(in: .whitespaces)
         guard !k.isEmpty else { return }
-        if !has(k) { model.toggleKeyword(k) }
+        add(k)
         custom = ""
     }
 
     @ViewBuilder
-    private func chipGroup(_ title: String, _ words: [String]) -> some View {
+    private func chipGroup(_ title: String, _ words: [String],
+                            isOn: @escaping (String) -> Bool, toggle: @escaping (String) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title.uppercased())
                 .font(.ui(8.5, .semibold)).foregroundStyle(Theme.textFaint).tracking(0.4)
-            FlowChips(words: words, isOn: { has($0) }) { model.toggleKeyword($0) }
+            FlowChips(words: words, isOn: isOn, toggle: toggle)
         }
     }
 }
