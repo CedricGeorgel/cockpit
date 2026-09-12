@@ -31,7 +31,7 @@ final class MenuBarController: NSObject {
         render()
 
         CockpitStatus.shared.$menuLine
-            .combineLatest(CockpitStatus.shared.$symbol)
+            .combineLatest(CockpitStatus.shared.$symbol, CockpitStatus.shared.$flash)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.render() }
             .store(in: &bag)
@@ -45,13 +45,16 @@ final class MenuBarController: NSObject {
 
     private func render() {
         guard let button = item?.button else { return }
+        // Un flash (mail important tout juste arrivé…) prend brièvement la
+        // place du statut permanent, puis s'efface tout seul (CockpitStatus).
+        let flash = CockpitStatus.shared.flash
+        let symbolName = flash?.symbol ?? CockpitStatus.shared.symbol
+        let line = flash?.text ?? CockpitStatus.shared.menuLine
         let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
-        let img = NSImage(systemSymbolName: CockpitStatus.shared.symbol,
-                          accessibilityDescription: "Cockpit")?
+        let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Cockpit")?
             .withSymbolConfiguration(cfg)
         img?.isTemplate = true
         button.image = img
-        let line = CockpitStatus.shared.menuLine
         button.title = line.isEmpty ? "" : " \(line)"
     }
 

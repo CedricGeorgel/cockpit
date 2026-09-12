@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 APP="Cockpit.app"
 BUNDLE_ID="com.cockpit.dashboard"
-VERSION="0.21"
+VERSION="0.22"
 CONFIG="${CONFIG:-release}"
 
 echo "▸ Compilation ($CONFIG, arm64)…"
