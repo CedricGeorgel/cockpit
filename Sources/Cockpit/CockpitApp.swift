@@ -28,6 +28,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.ensureAllWindowsOnScreen() }
+
+        // Vraie mise en veille (pas juste arrière-plan) : chaque minuterie reprend
+        // à son propre rythme au réveil. On force un rafraîchissement complet
+        // pour ne pas attendre jusqu'à 15 min (météo) avant que tout soit à jour.
+        NotificationCenter.default.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { _ in Task { @MainActor in Services.shared.refreshEverything() } }
     }
 
     private var menuBarOn: Bool { UserDefaults.standard.object(forKey: "cockpit.menubar") as? Bool ?? true }

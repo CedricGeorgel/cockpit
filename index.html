@@ -278,7 +278,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.23";
+const COCKPIT_VERSION = "0.24";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");

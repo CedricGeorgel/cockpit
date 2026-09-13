@@ -57,5 +57,6 @@ final class Services: ObservableObject {
         weather.refresh(); news.refresh(); mail.refreshAll(); parcels.refresh()
         calendar.reload(); todos.reload(); battery.refresh(); disk.refreshVolume()
         CockpitStatus.shared.recompute()
+        RemoteBridge.shared.syncNow()
     }
 }
