@@ -100,9 +100,14 @@ struct TimelineModule: View {
                         ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
                             // Repère « maintenant » : au passage passé → à venir (i = 0 inclus).
                             if e.at > now, i == 0 || entries[i - 1].at <= now { nowMarker }
-                            if i > 0, !cal.isDate(entries[i - 1].at, inSameDayAs: e.at) {
-                                dayDivider(e.at)
-                            }
+                            // Barre « demain » : comparée à l'entrée précédente, SAUF en tête de
+                            // liste où on la compare à aujourd'hui — sinon, quand plus rien ne
+                            // reste pour aujourd'hui, la liste ne montre QUE demain sans le dire
+                            // (tout un lundi qui « débarque » sans prévenir à 00h01).
+                            let isDayBreak = i == 0
+                                ? !cal.isDateInToday(e.at)
+                                : !cal.isDate(entries[i - 1].at, inSameDayAs: e.at)
+                            if isDayBreak { dayDivider(e.at) }
                             row(e)
                         }
                         // Journée finie : le repère se pose en fin de liste.

@@ -2,9 +2,21 @@ import SwiftUI
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    /// Tenu pour la durée de vie du process : Cockpit est un utilitaire qui doit
+    /// continuer à rafraîchir mail/météo/actus/horloge même fenêtre cachée
+    /// (mode barre de menus). Sans ça, App Nap ralentit ou gèle les Timer dès
+    /// que la fenêtre n'est plus visible — l'horloge de la top bar qui ne
+    /// bouge plus en est le symptôme le plus visible.
+    private var napToken: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // .userInitiatedAllowingIdleSystemSleep : sort du throttling App Nap
+        // (les Timer restent précis) sans empêcher le Mac de s'endormir tout seul.
+        napToken = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Tableau de bord tenu à jour en continu")
         configureWindow()
         // La fenêtre SwiftUI n'existe pas toujours au tout premier instant.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.configureWindow() }
