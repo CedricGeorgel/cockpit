@@ -45,6 +45,9 @@ final class MailModel: ObservableObject {
         var mails: [Mail] = []
         var otherUnread = 0
         var lastSync: Date?
+        /// Newsletters non lues avec un lien de désabonnement — carte à part,
+        /// éphémère (disparaît une fois le mail ouvert donc lu).
+        var newsletters: [Mail] = []
         var unread: Int { mails.filter { !$0.seen }.count }
     }
 
@@ -212,6 +215,11 @@ final class MailModel: ObservableObject {
 
     func state(_ id: String) -> SourceState { states[id] ?? SourceState() }
 
+    /// Newsletters non lues avec lien de désabonnement, tous comptes confondus.
+    var allNewsletters: [Mail] {
+        sources.flatMap { state($0.id).newsletters }.sorted { $0.date > $1.date }
+    }
+
     // MARK: Découverte Mail.app
 
     func discoverAppleMail() {
@@ -283,7 +291,7 @@ final class MailModel: ObservableObject {
         switch source {
         case .appleMail(let name):
             DispatchQueue.global(qos: .utility).async { [weak self] in
-                let result: Result<([Mail], Int), Error>
+                let result: Result<([Mail], Int, [Mail]), Error>
                 do {
                     let fetch = try AppleMailBridge.fetch(account: name)
                     result = .success(Self.digest(fetch, contacts: contacts, account: name))
@@ -298,7 +306,7 @@ final class MailModel: ObservableObject {
                 return
             }
             Task { [weak self] in
-                let result: Result<([Mail], Int), Error>
+                let result: Result<([Mail], Int, [Mail]), Error>
                 do {
                     let auth = try await Self.authorization(for: account)
                     let client = IMAPClient(host: account.host, port: account.port)
@@ -310,12 +318,12 @@ final class MailModel: ObservableObject {
         }
     }
 
-    private func apply(_ result: Result<([Mail], Int), Error>, to sid: String) {
+    private func apply(_ result: Result<([Mail], Int, [Mail]), Error>, to sid: String) {
         switch result {
-        case .success(let (mails, unread)):
+        case .success(let (mails, unread, newsletters)):
             update(sid) {
                 $0.loading = false; $0.mails = mails
-                $0.otherUnread = unread; $0.lastSync = Date()
+                $0.otherUnread = unread; $0.newsletters = newsletters; $0.lastSync = Date()
             }
         case .failure(let error):
             update(sid) {
@@ -348,15 +356,25 @@ final class MailModel: ObservableObject {
 
     /// Tri « important » : signalé, ou travail/candidature, ou contact, ou
     /// correspondant déjà connu. Les listes / newsletters sont écartées.
-    private static func digest(_ fetch: MailFetch, contacts: Set<String>, account: String) -> ([Mail], Int) {
+    private static func digest(_ fetch: MailFetch, contacts: Set<String>, account: String) -> ([Mail], Int, [Mail]) {
         var mails: [Mail] = []
         var otherUnread = 0
+        var newsletters: [Mail] = []
         let keywords = loadKeywords().map { $0.folding(options: .diacriticInsensitive, locale: nil).lowercased() }
         let excludes = loadExcludes().map { $0.folding(options: .diacriticInsensitive, locale: nil).lowercased() }
         for m in fetch.messages {
             let email = m.fromAddress.lowercased()
             let hay = (m.subject + " " + m.fromName + " " + email)
                 .folding(options: .diacriticInsensitive, locale: nil).lowercased()
+
+            // Carte « Se désabonner » : indépendante du tri importance, tant
+            // que le mail n'est pas lu (elle se vide toute seule une fois ouvert).
+            if !m.seen && m.hasUnsubscribeLink {
+                newsletters.append(Mail(id: "\(account)-\(m.uid)-\(email)", fromName: m.fromName,
+                                        fromAddress: email, subject: m.subject, date: m.date,
+                                        seen: m.seen, reason: .known, messageID: m.messageID, account: account))
+            }
+
             let reason: Reason?
             // Signalé ou mot-clé suivi : passe toujours, même si c'est une « liste ».
             // Sauf si le mail est structurellement une newsletter (isBulk) ET contient
@@ -381,7 +399,8 @@ final class MailModel: ObservableObject {
             }
         }
         mails.sort { ($0.seen ? 1 : 0, $1.date) < ($1.seen ? 1 : 0, $0.date) }
-        return (mails, otherUnread)
+        newsletters.sort { $0.date > $1.date }
+        return (mails, otherUnread, newsletters)
     }
 
     /// Contexte professionnel : candidature, réponse de recruteur, entretien…
@@ -850,3 +869,44 @@ struct FlowLayout: Layout {
     }
 }
 
+
+/// « Se désabonner » : newsletters non lues avec un lien de désabonnement
+/// détecté (en-tête List-Unsubscribe). Carte éphémère — n'apparaît que s'il y
+/// a quelque chose, et chaque ligne disparaît d'elle-même une fois le mail
+/// ouvert (donc marqué lu). Cliquer une ligne ouvre le mail dans Mail.
+struct UnsubscribeModule: View {
+    @ObservedObject var model: MailModel
+
+    var body: some View {
+        ModuleBody {
+            if model.allNewsletters.isEmpty {
+                ModuleNotice(icon: "bell.slash", title: "Rien à désabonner")
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(model.allNewsletters) { row($0) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ m: MailModel.Mail) -> some View {
+        Button { model.openInMail(m) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "bell.slash.fill")
+                    .font(.system(size: 10)).foregroundStyle(Theme.textFaint).frame(width: 14)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(m.fromName).font(.ui(12, .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text(m.subject).font(.ui(9.5)).foregroundStyle(Theme.textFaint).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Text(Fmt.relday(m.date)).font(.ui(9)).foregroundStyle(Theme.textFaint)
+            }
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Ouvrir dans Mail")
+    }
+}

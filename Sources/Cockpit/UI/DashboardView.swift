@@ -160,6 +160,7 @@ struct DashboardView: View {
         case .battery:    return battery.mac != nil || !battery.devices.isEmpty || !battery.fleetMacs.isEmpty
         case .trips:      return !tripsList.isEmpty
         case .jobs:       return !JobsDigest.compute(mail.sources.flatMap { mail.state($0.id).mails }).isEmpty
+        case .unsubscribe: return !mail.allNewsletters.isEmpty
         default:          return true
         }
     }
@@ -449,6 +450,7 @@ struct ModuleHost: View {
         case .jobs:       JobsModule(mail: services.mail)
         case .parcels:    ParcelsModule(model: services.parcels)
         case .trips:      TripsModule(calendar: services.calendar, mail: services.mail)
+        case .unsubscribe: UnsubscribeModule(model: services.mail)
         }
     }
 }

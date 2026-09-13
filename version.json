@@ -1,1 +1,1 @@
-{"version":"0.25","url":"Cockpit.dmg","notes":"Correctif SwiftUI : les Timer (horloge, trajets, timeline, appels) sont maintenant stables (@State), ne se r\u00e9initialisent plus \u00e0 chaque rendu"}
+{"version":"0.26","url":"Cockpit.dmg","notes":"Carte \u00ab Se d\u00e9sabonner \u00bb : newsletters non lues avec lien de d\u00e9sabonnement, clic pour ouvrir le mail, dispara\u00eet une fois lu"}

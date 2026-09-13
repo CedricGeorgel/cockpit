@@ -16,6 +16,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
     case jobs
     case parcels
     case trips
+    case unsubscribe
 
     var id: String { rawValue }
 
@@ -34,6 +35,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
         case .jobs:       return "Suivi des candidatures"
         case .parcels:    return "Suivi de colis"
         case .trips:      return "Trajets"
+        case .unsubscribe: return "Se désabonner"
         }
     }
 
@@ -52,6 +54,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
         case .jobs:       return "briefcase"
         case .parcels:    return "shippingbox"
         case .trips:      return "tram.fill"
+        case .unsubscribe: return "bell.slash"
         }
     }
 
@@ -71,6 +74,7 @@ enum ModuleKind: String, CaseIterable, Codable, Identifiable {
         case .jobs:       return 1.1
         case .parcels:    return 1.0
         case .trips:      return 0.8
+        case .unsubscribe: return 0.8
         }
     }
 }
@@ -324,7 +328,7 @@ final class CanvasModel: ObservableObject {
 
     static let defaultColumns: [[ModuleKind]] = [
         [.timeline, .weather, .disk, .nowPlaying, .battery],
-        [.mail, .jobs, .trips, .todos],
+        [.mail, .jobs, .trips, .unsubscribe, .todos],
         [.news, .parcels, .scratchpad, .callTime],
     ]
 }

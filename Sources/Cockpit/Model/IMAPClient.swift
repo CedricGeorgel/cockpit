@@ -37,6 +37,10 @@ struct RawMessage {
             || (headers["precedence"]?.lowercased().contains("list") ?? false)
     }
 
+    /// Un vrai lien de désabonnement (RFC 2369/8058), pas juste un en-tête de
+    /// liste — sert à proposer « se désabonner » plutôt qu'à trier l'important.
+    var hasUnsubscribeLink: Bool { headers["list-unsubscribe"] != nil }
+
     private var fromField: String { explicitFrom ?? headers["from"] ?? "" }
     var fromAddress: String { MailParse.address(in: fromField).email }
     var fromName: String {
