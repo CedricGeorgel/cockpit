@@ -1,1 +1,1 @@
-{"version":"0.24","url":"Cockpit.dmg","notes":"Rafra\u00eechissement complet au r\u00e9veil du Mac (m\u00e9t\u00e9o/mail/actus/snapshot ne tra\u00eenent plus)"}
+{"version":"0.25","url":"Cockpit.dmg","notes":"Correctif SwiftUI : les Timer (horloge, trajets, timeline, appels) sont maintenant stables (@State), ne se r\u00e9initialisent plus \u00e0 chaque rendu"}

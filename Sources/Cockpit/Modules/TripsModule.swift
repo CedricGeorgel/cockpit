@@ -179,7 +179,7 @@ struct TripsModule: View {
     @ObservedObject var calendar: CalendarModel
     @ObservedObject var mail: MailModel
     @State private var now = Date()
-    private let tick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     private var trips: [Trip] {
         TripsDigest.compute(calendar.events,

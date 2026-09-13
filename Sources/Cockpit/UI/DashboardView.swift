@@ -21,7 +21,7 @@ struct DashboardView: View {
     @State private var scratchEmpty = ScratchStore.load().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     /// Force la ré-évaluation de ce qui dépend de l'heure (trajet parti / arrivé, alertes).
     @State private var clockTick = Date()
-    private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    @State private var clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
         let _ = clockTick   // dépendance : body se rejoue toutes les 30 s
@@ -314,7 +314,7 @@ struct TopBar: View {
     @Binding var theme: String
     @State private var now = Date()
     @State private var showMobile = false
-    private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    @State private var clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     private func cycleTheme() {
         theme = theme == "auto" ? "light" : theme == "light" ? "dark" : "auto"

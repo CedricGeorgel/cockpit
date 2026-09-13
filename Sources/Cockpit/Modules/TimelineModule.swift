@@ -11,7 +11,7 @@ struct TimelineModule: View {
     @ObservedObject var mail: MailModel
     @ObservedObject var birthdays: BirthdaysModel
     @State private var now = Date()
-    private let tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     enum Kind { case event, trip, reminder, leave, birthday }
 

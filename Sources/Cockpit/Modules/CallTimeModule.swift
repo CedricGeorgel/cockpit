@@ -55,7 +55,7 @@ struct CallTimeModule: View {
     @StateObject private var store = CallTimeStore()
     @State private var now = Date()
     @State private var adding = false
-    private let tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    @State private var tick = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ModuleBody {
