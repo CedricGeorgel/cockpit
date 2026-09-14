@@ -278,7 +278,7 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()+
 // ---- réseau ---------------------------------------------------------------
 // relay.php est servi à côté de cette page. On n'a besoin que de instance + token.
 const RELAY = new URL("relay.php", location.href).href;
-const COCKPIT_VERSION = "0.26";
+const COCKPIT_VERSION = "0.27";
 const isConfigured = () => !!cfg.token;
 
 function cmpVer(a,b){ const pa=String(a).split("."),pb=String(b).split(".");
@@ -383,7 +383,7 @@ function mergeFleet(devs){
     && !(Array.isArray(v) && v.length === 0)
     && !(typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 0);
   const pick = k => (devs.find(d => filled(d[k])) || devs[0])[k];
-  for(const k of ["weather","agenda","todos","news","mail","jobs","parcels","trips","callTime","birthdays"])
+  for(const k of ["weather","agenda","todos","news","mail","jobs","parcels","trips","callTime","birthdays","habits"])
     m[k] = pick(k);
   m.scratchpad = devs.map(d => d.scratchpad).find(s => s) || "";
 
@@ -576,7 +576,7 @@ function render(){
   app.append(
     finalize(timelineCard(),"timeline"),
     finalize(weatherCard(),"weather"), finalize(tripsCard(),"trips"),
-    finalize(todosCard(),"todos"),
+    finalize(todosCard(),"todos"), finalize(habitsCard(),"habits"),
     finalize(mailCard(),"mail"), finalize(jobsCard(),"jobs"),
     finalize(parcelsCard(),"parcels"),
     finalize(scratchCard(),"scratchpad"), finalize(newsCard(),"news")
@@ -797,6 +797,24 @@ function todosCard(){
   for(const p of pending.filter(p=>p.kind==="addReminder")){
     const r = el("div","row"); r.append(el("button","check"), el("div","main",
       (()=>{ const d=el("div","t",p.args.title); d.append(el("span","pending","en attente…")); return d; })()));
+    b.append(r);
+  }
+  return c;
+}
+
+function habitsCard(){
+  const items = snap.habits||[]; if(!items.length) return "";
+  const { card:c, body:b } = card("Habitudes","🔥");
+  for(const h of items){
+    const p = pendingFor("toggleHabit",{id:h.id});
+    const done = p ? !h.doneToday : h.doneToday;
+    const r = el("div","row");
+    const ck = el("button","check"+(done?" done":""));
+    ck.onclick = ()=>{ sendCommand("toggleHabit",{id:h.id},"habitude"); render(); };
+    const m = el("div","main");
+    m.append(el("div","t",h.name));
+    if(h.streak>0) m.append(el("div","s","🔥 "+h.streak+" j"));
+    r.append(ck,m);
     b.append(r);
   }
   return c;

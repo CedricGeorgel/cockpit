@@ -16,6 +16,9 @@ final class Services: ObservableObject {
     let battery = BatteryModel()
     let parcels = ParcelsModel()
     let birthdays = BirthdaysModel()
+    let habits = HabitsStore()
+    let subscriptions = SubscriptionsStore()
+    let history = HistoryStore()
 
     private var started = false
 
@@ -50,6 +53,10 @@ final class Services: ObservableObject {
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             self?.news.refresh()
         }
+        Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+            self?.history.record()
+        }
+        history.record()
     }
 
     @MainActor
@@ -58,5 +65,6 @@ final class Services: ObservableObject {
         calendar.reload(); todos.reload(); battery.refresh(); disk.refreshVolume()
         CockpitStatus.shared.recompute()
         RemoteBridge.shared.syncNow()
+        history.record()
     }
 }

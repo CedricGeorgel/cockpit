@@ -5,12 +5,31 @@ cd "$(dirname "$0")"
 
 APP="Cockpit.app"
 BUNDLE_ID="com.cockpit.dashboard"
-VERSION="0.26"
+VERSION="0.27"
 CONFIG="${CONFIG:-release}"
 
 echo "▸ Compilation ($CONFIG, arm64)…"
-swift build -c "$CONFIG" --arch arm64
-BIN="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)/Cockpit"
+SRC=(Sources/Cockpit/*.swift Sources/Cockpit/Model/*.swift Sources/Cockpit/Modules/*.swift Sources/Cockpit/UI/*.swift)
+FRAMEWORKS=(-framework SwiftUI -framework AppKit -framework AuthenticationServices -framework Contacts
+            -framework CryptoKit -framework EventKit -framework IOKit -framework Network -framework UserNotifications
+            -framework Charts)
+
+# swiftc direct : repli si `swift build` (SwiftPM) est cassé sur la machine —
+# BuildServerProtocol.framework dépareillé dans les Command Line Tools sans
+# Xcode complet (vu sur CLT 26.6/27.0). swiftc seul reste sain dans ce cas.
+if swift build -c "$CONFIG" --arch arm64 2>/tmp/cockpit-swiftbuild.log; then
+    BIN="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)/Cockpit"
+else
+    echo "  ⚠️  swift build indisponible sur cette machine (log : /tmp/cockpit-swiftbuild.log)"
+    echo "  ▸ repli sur swiftc direct…"
+    OPT_FLAG="-Onone"; [ "$CONFIG" = "release" ] && OPT_FLAG="-Ounchecked"
+    SDK="${COCKPIT_SDK:-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk}"
+    BUILD_DIR=".build/direct-$CONFIG"
+    mkdir -p "$BUILD_DIR"
+    BIN="$BUILD_DIR/Cockpit"
+    swiftc -target arm64-apple-macos14.0 -sdk "$SDK" "$OPT_FLAG" -parse-as-library \
+           "${SRC[@]}" -o "$BIN" "${FRAMEWORKS[@]}"
+fi
 
 echo "▸ Assemblage du bundle…"
 rm -rf "$APP"

@@ -26,6 +26,14 @@ struct DashboardSnapshot: Codable {
     var callTime: [Contact]
     var scratchpad: String
     var birthdays: [Birthday] = []
+    var habits: [HabitItem] = []
+
+    struct HabitItem: Codable, Identifiable {
+        var id: String
+        var name: String
+        var doneToday: Bool
+        var streak: Int
+    }
 
     struct Birthday: Codable, Identifiable {
         var id: String
@@ -265,6 +273,14 @@ enum SnapshotBuilder {
             DashboardSnapshot.Birthday(id: $0.id, name: $0.name, date: $0.date, turning: $0.turning)
         }
 
+        // Habitudes
+        let today = HabitsStore.dayKey(Date())
+        let habits = s.habits.habits.map { h in
+            DashboardSnapshot.HabitItem(id: h.id.uuidString, name: h.name,
+                                        doneToday: h.doneDays.contains(today),
+                                        streak: s.habits.streak(h))
+        }
+
         return DashboardSnapshot(
             generatedAt: Date(),
             device: Host.current().localizedName ?? "Mac",
@@ -272,7 +288,7 @@ enum SnapshotBuilder {
             weather: weather, agenda: agenda, todos: todos, news: Array(news), mail: mail,
             jobs: jobs, parcels: parcels, trips: trips, battery: battery, disk: disk,
             callTime: CallTimeStore.decode(), scratchpad: ScratchStore.load(),
-            birthdays: bdays)
+            birthdays: bdays, habits: habits)
     }
 
     private static func reasonKey(_ r: MailModel.Reason) -> String {

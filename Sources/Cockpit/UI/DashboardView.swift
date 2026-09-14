@@ -313,8 +313,11 @@ struct UpdateBanner: View {
 struct TopBar: View {
     @ObservedObject var canvas: CanvasModel
     @Binding var theme: String
+    @Environment(\.openSettings) private var openSettings
+    @ObservedObject private var history = Services.shared.history
     @State private var now = Date()
     @State private var showMobile = false
+    @State private var showCharts = false
     @State private var clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     private func cycleTheme() {
@@ -375,7 +378,6 @@ struct TopBar: View {
                         }.disabled(shown)
                     }
                     Divider()
-                    Button("Tableau de bord mobile…") { showMobile = true }
                     Button("Réinitialiser la disposition", role: .destructive) { canvas.reset() }
                 } label: {
                     Label("Modules", systemImage: "square.grid.2x2")
@@ -383,7 +385,19 @@ struct TopBar: View {
                 .menuStyle(.button)
                 .buttonStyle(GhostButtonStyle())
                 .fixedSize()
+
+                Button { openSettings() } label: {
+                    Label("Réglages", systemImage: "gearshape")
+                }
+                .buttonStyle(GhostButtonStyle())
+                .fixedSize()
             }
+
+            Button { showCharts = true } label: {
+                Image(systemName: "chart.xyaxis.line").font(.system(size: 12))
+            }
+            .buttonStyle(GhostButtonStyle())
+            .help("Historique")
 
             Button { cycleTheme() } label: {
                 Image(systemName: themeIcon).font(.system(size: 12))
@@ -398,12 +412,14 @@ struct TopBar: View {
                 }
                 canvas.save()
             } label: {
-                Label(canvas.editing ? "Terminé" : "Réglages",
-                      systemImage: canvas.editing ? "checkmark" : "slider.horizontal.3")
+                Image(systemName: canvas.editing ? "checkmark" : "gearshape")
+                    .font(.system(size: 12))
             }
             .buttonStyle(GhostButtonStyle(prominent: canvas.editing))
+            .help(canvas.editing ? "Terminé" : "Disposition")
         }
         .sheet(isPresented: $showMobile) { MobileSyncSheet() }
+        .sheet(isPresented: $showCharts) { ChartsSheet(history: history) }
         .onReceive(NotificationCenter.default.publisher(for: .cockpitOpenConnect)) { _ in showMobile = true }
         .padding(.horizontal, 16)
         .padding(.leading, 62)
@@ -451,6 +467,8 @@ struct ModuleHost: View {
         case .parcels:    ParcelsModule(model: services.parcels)
         case .trips:      TripsModule(calendar: services.calendar, mail: services.mail)
         case .unsubscribe: UnsubscribeModule(model: services.mail)
+        case .habits:      HabitsModule(store: services.habits)
+        case .subscriptions: SubscriptionsModule(store: services.subscriptions, mail: services.mail)
         }
     }
 }

@@ -405,6 +405,8 @@ final class RemoteBridge {
             if let t = a["title"], !t.isEmpty { s.todos.addReminder(t) }
         case "refreshMail":    s.mail.refreshAll()
         case "refreshParcels": s.parcels.refresh()
+        case "toggleHabit":
+            if let idStr = a["id"], let id = UUID(uuidString: idStr) { s.habits.toggle(id, day: Date()) }
         default: break
         }
     }

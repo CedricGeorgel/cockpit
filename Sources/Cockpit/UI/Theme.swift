@@ -140,6 +140,15 @@ enum Fmt {
         return f.string(from: date)
     }
 
+    static func currency(_ amount: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.locale = Locale(identifier: "fr_FR")
+        f.currencyCode = "EUR"
+        f.maximumFractionDigits = amount.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
+        return f.string(from: amount as NSNumber) ?? String(format: "%.2f €", amount)
+    }
+
     static func relday(_ date: Date) -> String {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return "aujourd'hui" }

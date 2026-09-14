@@ -215,9 +215,26 @@ final class MailModel: ObservableObject {
 
     func state(_ id: String) -> SourceState { states[id] ?? SourceState() }
 
-    /// Newsletters non lues avec lien de désabonnement, tous comptes confondus.
+    /// Expéditeurs traités (désabonné à la main, ou volontairement gardé) —
+    /// leurs newsletters ne repassent plus dans la carte « Se désabonner ».
+    @Published var resolvedSenders: Set<String> = MailModel.loadResolved()
+    private static let resolvedKey = "cockpit.unsubscribe.resolved"
+    private static func loadResolved() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: resolvedKey) ?? [])
+    }
+    func markResolved(_ address: String) {
+        let key = address.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !key.isEmpty, resolvedSenders.insert(key).inserted else { return }
+        UserDefaults.standard.set(Array(resolvedSenders), forKey: Self.resolvedKey)
+        NotificationCenter.default.post(name: .cockpitLocalSettingChanged, object: nil)
+    }
+
+    /// Newsletters non lues avec lien de désabonnement, tous comptes confondus,
+    /// hors expéditeurs déjà traités.
     var allNewsletters: [Mail] {
-        sources.flatMap { state($0.id).newsletters }.sorted { $0.date > $1.date }
+        sources.flatMap { state($0.id).newsletters }
+            .filter { !resolvedSenders.contains($0.fromAddress.lowercased()) }
+            .sorted { $0.date > $1.date }
     }
 
     // MARK: Découverte Mail.app
@@ -892,21 +909,41 @@ struct UnsubscribeModule: View {
     }
 
     private func row(_ m: MailModel.Mail) -> some View {
-        Button { model.openInMail(m) } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "bell.slash.fill")
-                    .font(.system(size: 10)).foregroundStyle(Theme.textFaint).frame(width: 14)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(m.fromName).font(.ui(12, .medium)).foregroundStyle(Theme.text).lineLimit(1)
-                    Text(m.subject).font(.ui(9.5)).foregroundStyle(Theme.textFaint).lineLimit(1)
+        HStack(spacing: 8) {
+            Button { model.openInMail(m) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.system(size: 10)).foregroundStyle(Theme.textFaint).frame(width: 14)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(m.fromName).font(.ui(12, .medium)).foregroundStyle(Theme.text).lineLimit(1)
+                        Text(m.subject).font(.ui(9.5)).foregroundStyle(Theme.textFaint).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text(Fmt.relday(m.date)).font(.ui(9)).foregroundStyle(Theme.textFaint)
                 }
-                Spacer(minLength: 4)
-                Text(Fmt.relday(m.date)).font(.ui(9)).foregroundStyle(Theme.textFaint)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 3)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help("Ouvrir dans Mail")
+
+            Button { model.markResolved(m.fromAddress) } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle").font(.system(size: 10))
+                    Text("Traité").font(.ui(9.5, .medium))
+                }
+            }
+            .buttonStyle(.plain).foregroundStyle(Theme.accent)
+            .help("Je m'y suis désabonné — ne plus proposer ce contact")
+
+            Button { model.markResolved(m.fromAddress) } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "bell").font(.system(size: 10))
+                    Text("Garder").font(.ui(9.5, .medium))
+                }
+            }
+            .buttonStyle(.plain).foregroundStyle(Theme.textFaint)
+            .help("Mail normal, je veux le garder — ne plus proposer ce contact")
         }
-        .buttonStyle(.plain)
-        .help("Ouvrir dans Mail")
+        .padding(.vertical, 3)
     }
 }

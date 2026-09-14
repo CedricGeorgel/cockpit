@@ -46,16 +46,19 @@ struct SettingsView: View {
             }
             .onChange(of: notif) { _, on in if on { Notifier.requestAuthorization() } }
 
-            Section("Compte") {
+            Section("Profil") {
                 if account.isEmpty {
                     LabeledContent("État", value: "Ce Mac uniquement")
-                    Button("Se connecter (sync téléphone + flotte)…") {
-                        NotificationCenter.default.post(name: .cockpitOpenConnect, object: nil)
-                    }
+                } else {
+                    LabeledContent("Connecté", value: account)
+                }
+                Button("Tableau de bord mobile…") {
+                    NotificationCenter.default.post(name: .cockpitOpenConnect, object: nil)
+                }
+                if account.isEmpty {
                     Text("Sans connexion, tout reste local à ce Mac. La PWA sur téléphone et le partage entre Macs demandent un compte.")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    LabeledContent("Connecté", value: account)
                     Button("Se déconnecter", role: .destructive) {
                         RemoteBridge.shared.disconnect()
                         UserDefaults.standard.set(true, forKey: "cockpit.localMode")
